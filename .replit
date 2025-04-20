@@ -28,7 +28,7 @@ task = "packager.installForAll"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "dotnet run --project ElevatorSimulation.fsproj -- --demo"
+args = "/nix/store/wlknwwx8f79lq8n07b0xh7ddjrrk191h-dotnet-sdk-8.0.404/bin/dotnet run --project ElevatorSimulation.fsproj -- --demo"
 
 [deployment]
 run = ["sh", "-c", "dotnet run --project ElevatorSimulation.fsproj"]
