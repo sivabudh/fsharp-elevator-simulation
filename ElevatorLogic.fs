@@ -81,7 +81,7 @@ let addRequestedFloor (floor: int) (elevator: ElevatorState) : ElevatorState =
     }
 
 /// Processes an internal request (from inside the elevator)
-let processInternalRequest elevatorId floor system =
+let processInternalRequest (elevatorId: int) (floor: int) (system: ElevatorSystem) : ElevatorSystem =
     let elevators = 
         system.Elevators 
         |> List.map (fun e -> 
@@ -97,7 +97,7 @@ let processInternalRequest elevatorId floor system =
     { system with Elevators = elevators }
 
 /// Processes an external request (from a floor button)
-let processExternalRequest floor direction system =
+let processExternalRequest (floor: int) (direction: Direction) (system: ElevatorSystem) : ElevatorSystem =
     // Check if this request is already in the queue
     if system.ExternalRequests |> List.contains (floor, direction) then
         system
@@ -568,7 +568,7 @@ let closeDoor (elevator: ElevatorState) : ElevatorState =
         elevator  // Return unchanged elevator - validation failed
 
 /// Reconsiders pending external requests
-let reconsiderExternalRequests system =
+let reconsiderExternalRequests (system: ElevatorSystem) : ElevatorSystem =
     let mutable updatedSystem = system
     let mutable remainingRequests = []
     
@@ -661,7 +661,7 @@ let handleDoorTimer (elevator: ElevatorState) : ElevatorState =
 /// This function uses F# 8's enhanced pattern matching with as-patterns
 /// for improved readability and type safety.
 /// </remarks>
-let processTick system =
+let processTick (system: ElevatorSystem) : ElevatorSystem =
     let updatedElevators =
         system.Elevators
         |> List.map (fun elevator ->
@@ -704,7 +704,7 @@ let processTick system =
 /// Uses F# 8's enhanced pattern matching and list comprehensions
 /// for more concise and readable code.
 /// </remarks>
-let processEvent event system =
+let processEvent (event: ElevatorEvent) (system: ElevatorSystem) : ElevatorSystem =
     match event with
     | RequestFloor (elevatorId, floor) ->
         // Process request from inside elevator
@@ -755,7 +755,7 @@ let processEvent event system =
 /// 
 /// Same logic as processArrival applies for how floor requests are considered "serviced".
 /// </remarks>
-let processArrivalWithConfig elevator doorOpenTicks =
+let processArrivalWithConfig (elevator: ElevatorState) (doorOpenTicks: int) : ElevatorState =
     if shouldStopAtFloor elevator then
         // Remove this floor from requested floors
         let newRequestedFloors = Set.remove elevator.CurrentFloor elevator.RequestedFloors
@@ -791,7 +791,7 @@ let processArrivalWithConfig elevator doorOpenTicks =
 /// - Doors automatically close when their timer expires
 /// - Idle elevators remain stationary until given a destination
 /// </remarks>
-let processTickWithConfig system doorOpenTicks =
+let processTickWithConfig (system: ElevatorSystem) (doorOpenTicks: int) : ElevatorSystem =
     let updatedElevators =
         system.Elevators
         |> List.map (fun elevator ->
@@ -834,7 +834,7 @@ let processTickWithConfig system doorOpenTicks =
 /// 
 /// Uses F# 8's list comprehension syntax for more concise code.
 /// </remarks>
-let processEventWithConfig event doorOpenTicks system =
+let processEventWithConfig (event: ElevatorEvent) (doorOpenTicks: int) (system: ElevatorSystem) : ElevatorSystem =
     match event with
     | OpenDoor elevatorId ->
         // Open doors with configurable time
