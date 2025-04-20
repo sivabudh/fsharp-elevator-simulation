@@ -87,62 +87,80 @@ type ElevatorRequest = {
 }
 
 /// <summary>
-/// Parses a floor call request from string inputs
+/// Parses a floor call request from string inputs using pure functional error handling
 /// </summary>
 /// <param name="floorStr">String representing the floor number</param>
 /// <param name="dirStr">String representing the direction ("up" or "down")</param>
 /// <param name="system">The elevator system for validation</param>
 /// <returns>A Result containing either the valid request or a specific error</returns>
 let parseFloorCall (floorStr: string) (dirStr: string) (system: ElevatorSystem) : Result<FloorCallRequest, ParseError> =
-    try
-        // Try to parse the floor number
+    // Parse floor number using TryParse
+    let parseFloorResult = 
         match System.Int32.TryParse(floorStr) with
-        | (true, floorNum) ->
-            // Validate floor number is within range
+        | (true, floorNum) -> Ok floorNum
+        | _ -> Error (InvalidFloorNumber (-1, system.FloorCount))
+    
+    // Validate floor number is within range
+    let validateFloorResult = 
+        parseFloorResult 
+        |> Result.bind (fun floorNum ->
             if floorNum < 1 || floorNum > system.FloorCount then
                 Error (InvalidFloorNumber (floorNum, system.FloorCount))
             else
-                // Parse and validate direction
-                match dirStr.ToLower() with
-                | "up" -> Ok { Floor = floorNum; Direction = Up }
-                | "down" -> Ok { Floor = floorNum; Direction = Down }
-                | _ -> Error (InvalidDirection dirStr)
-        | _ -> 
-            Error (InvalidFloorNumber (-1, system.FloorCount))
-    with
-    | ex -> Error (GeneralError ex.Message)
+                Ok floorNum)
+    
+    // Parse direction
+    let parseDirectionResult =
+        match dirStr.ToLower() with
+        | "up" -> Ok Up
+        | "down" -> Ok Down
+        | _ -> Error (InvalidDirection dirStr)
+    
+    // Combine results to create the final request
+    match validateFloorResult, parseDirectionResult with
+    | Ok floorNum, Ok direction -> 
+        Ok { Floor = floorNum; Direction = direction }
+    | Error e, _ -> Error e
+    | _, Error e -> Error e
 
 /// <summary>
-/// Parses an elevator request from string inputs
+/// Parses an elevator request from string inputs using pure functional error handling
 /// </summary>
 /// <param name="elevatorStr">String representing the elevator ID</param>
 /// <param name="floorStr">String representing the target floor</param>
 /// <param name="system">The elevator system for validation</param>
 /// <returns>A Result containing either the valid request or a specific error</returns>
 let parseElevatorRequest (elevatorStr: string) (floorStr: string) (system: ElevatorSystem) : Result<ElevatorRequest, ParseError> =
-    try
-        // Try to parse the elevator ID and floor number
-        match System.Int32.TryParse(elevatorStr), System.Int32.TryParse(floorStr) with
-        | (true, elevatorId), (true, floorNum) ->
-            // Check if elevator exists
-            let elevator = system.Elevators |> List.tryFind (fun e -> e.Id = elevatorId)
-            
-            match elevator with
-            | None -> 
-                Error (InvalidElevatorId (elevatorId, system.Elevators.Length))
-            | Some e when e.CurrentFloor = floorNum && e.DoorStatus = Open -> 
-                // Elevator is already at requested floor with doors open
-                Error (SameFloorRequest floorNum)
-            | Some _ when floorNum < 1 || floorNum > system.FloorCount ->
-                Error (InvalidFloorNumber (floorNum, system.FloorCount))
-            | Some _ -> 
-                Ok { ElevatorId = elevatorId; TargetFloor = floorNum }
-        | (false, _), _ ->
-            Error (InvalidElevatorId (-1, system.Elevators.Length))
-        | _, (false, _) ->
-            Error (InvalidFloorNumber (-1, system.FloorCount))
-    with
-    | ex -> Error (GeneralError ex.Message)
+    // Parse elevator ID
+    let parseElevatorResult = 
+        match System.Int32.TryParse(elevatorStr) with
+        | (true, elevatorId) -> Ok elevatorId
+        | _ -> Error (InvalidElevatorId (-1, system.Elevators.Length))
+    
+    // Parse floor number
+    let parseFloorResult = 
+        match System.Int32.TryParse(floorStr) with
+        | (true, floorNum) -> Ok floorNum
+        | _ -> Error (InvalidFloorNumber (-1, system.FloorCount))
+    
+    // Validate elevator and floor in sequence
+    match parseElevatorResult, parseFloorResult with
+    | Ok elevatorId, Ok floorNum ->
+        // Check if elevator exists
+        let elevator = system.Elevators |> List.tryFind (fun e -> e.Id = elevatorId)
+        
+        match elevator with
+        | None -> 
+            Error (InvalidElevatorId (elevatorId, system.Elevators.Length))
+        | Some e when e.CurrentFloor = floorNum && e.DoorStatus = Open -> 
+            // Elevator is already at requested floor with doors open
+            Error (SameFloorRequest floorNum)
+        | Some _ when floorNum < 1 || floorNum > system.FloorCount ->
+            Error (InvalidFloorNumber (floorNum, system.FloorCount))
+        | Some _ -> 
+            Ok { ElevatorId = elevatorId; TargetFloor = floorNum }
+    | Error e, _ -> Error e
+    | _, Error e -> Error e
 
 /// <summary>
 /// Validates a floor call request (for backward compatibility)
