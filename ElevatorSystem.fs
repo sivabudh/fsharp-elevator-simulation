@@ -101,43 +101,43 @@ let rec runSimulation state =
             { state with IsRunning = false }
         else
             match input.Trim().ToLower() with
-        | "help" ->
-            printfn "\nAvailable commands:"
-            printfn "  call <floor> <up|down> - Call an elevator to a floor"
-            printfn "  request <elevator> <floor> - Request an elevator to go to a floor"
-            printfn "  tick - Advance the simulation by one time step"
-            printfn "  auto - Enable automatic ticking"
-            printfn "  stop - Disable automatic ticking"
-            printfn "  exit - Exit the simulation"
-            runSimulation state
-        | "auto" ->
-            printfn "Auto-tick enabled"
-            runSimulation { state with AutoTick = true }
-        | "stop" ->
-            printfn "Auto-tick disabled"
-            runSimulation { state with AutoTick = false }
-        | _ ->
-            match processInput input state.System with
-            | Some Exit ->
-                printfn "Exiting simulation..."
-                { state with IsRunning = false }
-            | Some Tick ->
-                let updatedSystem = processTick state.System
-                ElevatorSimulation.UI.displayElevatorSystem updatedSystem
-                runSimulation { state with System = updatedSystem }
-            | Some event ->
-                let updatedSystem = processEvent event state.System
-                ElevatorSimulation.UI.displayElevatorSystem updatedSystem
-                runSimulation { state with System = updatedSystem }
-            | None ->
-                // Wait for auto-tick thread if it's running
-                match autoTickThread with
-                | Some thread -> thread.Join()
-                | None -> ()
-                
-                if state.AutoTick then
+            | "help" ->
+                printfn "\nAvailable commands:"
+                printfn "  call <floor> <up|down> - Call an elevator to a floor"
+                printfn "  request <elevator> <floor> - Request an elevator to go to a floor"
+                printfn "  tick - Advance the simulation by one time step"
+                printfn "  auto - Enable automatic ticking"
+                printfn "  stop - Disable automatic ticking"
+                printfn "  exit - Exit the simulation"
+                runSimulation state
+            | "auto" ->
+                printfn "Auto-tick enabled"
+                runSimulation { state with AutoTick = true }
+            | "stop" ->
+                printfn "Auto-tick disabled"
+                runSimulation { state with AutoTick = false }
+            | _ ->
+                match processInput input state.System with
+                | Some Exit ->
+                    printfn "Exiting simulation..."
+                    { state with IsRunning = false }
+                | Some Tick ->
                     let updatedSystem = processTick state.System
                     ElevatorSimulation.UI.displayElevatorSystem updatedSystem
                     runSimulation { state with System = updatedSystem }
-                else
-                    runSimulation state
+                | Some event ->
+                    let updatedSystem = processEvent event state.System
+                    ElevatorSimulation.UI.displayElevatorSystem updatedSystem
+                    runSimulation { state with System = updatedSystem }
+                | None ->
+                    // Wait for auto-tick thread if it's running
+                    match autoTickThread with
+                    | Some thread -> thread.Join()
+                    | None -> ()
+                    
+                    if state.AutoTick then
+                        let updatedSystem = processTick state.System
+                        ElevatorSimulation.UI.displayElevatorSystem updatedSystem
+                        runSimulation { state with System = updatedSystem }
+                    else
+                        runSimulation state
