@@ -344,16 +344,24 @@ let findNextStop currentFloor currentDirection requestedFloors =
 /// Important: A floor is considered "serviced" at the moment the doors begin to open,
 /// not when they close. This ensures that passenger boarding/alighting is properly
 /// modeled with the timed door open state.
+/// 
+/// Request handling sequence:
+/// - When shouldStopAtFloor returns true, the elevator opens its doors
+/// - The floor is immediately removed from requested floors (considered "serviced")
+/// - The next destination is calculated based on remaining requests
+/// - The elevator won't move again until doors are closed (enforced by movement checks)
 /// </remarks>
 let processArrival elevator =
     if shouldStopAtFloor elevator then
-        // Remove this floor from requested floors
+        // Step 1: Remove this floor from requested floors
+        // This marks the request as "serviced" immediately when doors begin to open
         let newRequestedFloors = Set.remove elevator.CurrentFloor elevator.RequestedFloors
         
-        // Determine next target floor and direction using the scheduling algorithm
+        // Step 2: Determine next target floor and direction using the scheduling algorithm
         let (nextTarget, newDirection) = findNextStop elevator.CurrentFloor elevator.Direction newRequestedFloors
         
-        // Using a default door open time here
+        // Step 3: Open doors and start the timer
+        // Using a default door open time here (3 ticks)
         // For configurable timing, use processArrivalWithConfig instead
         { elevator with 
             DoorStatus = Open
@@ -362,6 +370,7 @@ let processArrival elevator =
             TargetFloor = nextTarget
             Direction = newDirection }
     else
+        // Not a requested floor, continue without changing state
         elevator
 
 /// <summary>
@@ -376,47 +385,105 @@ let processArrival elevator =
 /// 2. Cannot close an already closed door
 /// 3. Cannot open doors while elevator is moving between floors
 /// 4. Cannot close doors while the door timer is still active (safety feature)
+/// 
+/// These validations are critical for passenger safety and proper elevator operation.
+/// In particular:
+/// - Rule #3 ensures passengers cannot open doors between floors (which would be unsafe)
+/// - Rule #4 ensures passengers have sufficient time to enter/exit before doors close
+/// 
+/// This function uses a comprehensive pattern matching approach with guards to
+/// evaluate complex conditions while maintaining readability. The result is either
+/// None (transition allowed) or Some string with an explanation of why the transition
+/// is invalid.
 /// </remarks>
 let validateDoorTransition elevator newDoorStatus =
     match elevator.DoorStatus, newDoorStatus with
     | Open, Open -> 
+        // No need to open an already open door
         Some "Door is already open"
+        
     | Closed, Closed -> 
+        // No need to close an already closed door
         Some "Door is already closed"
+        
     | Closed, Open when elevator.Direction <> Idle && 
                         not (shouldStopAtFloor elevator) -> 
-        // Cannot open doors while moving between floors
+        // Safety rule: Cannot open doors while moving between floors
+        // This prevents doors being opened when the elevator is between floors,
+        // which would be physically impossible and dangerous
         Some "Cannot open doors while elevator is moving between floors"
+        
     | Open, Closed when elevator.DoorOpenTimeRemaining.IsSome && 
                        elevator.DoorOpenTimeRemaining.Value > 0 ->
-        // Cannot close doors while timer is still active (safety feature)
+        // Safety feature: Cannot close doors while timer is still active
+        // This ensures doors remain open for the minimum required time,
+        // allowing passengers to safely enter and exit
         Some $"Cannot close doors yet, wait for timer ({elevator.DoorOpenTimeRemaining.Value} ticks remaining)"
-    | _ -> None
+        
+    | _ -> 
+        // All other transitions are valid:
+        // - Opening closed doors when elevator is stopped or at requested floor
+        // - Closing open doors after timer has expired
+        None
 
+/// <summary>
 /// Opens the door of an elevator with the specified door open time
-/// Uses F# 8's anonymous record copy-and-update expression
-/// Returns the updated elevator state or the original if operation is invalid
+/// </summary>
+/// <param name="elevator">The elevator whose door should be opened</param>
+/// <param name="doorOpenTime">The number of ticks the door should remain open</param>
+/// <returns>Updated elevator state with open door or unchanged if operation is invalid</returns>
+/// <remarks>
+/// This function:
+/// 1. Validates the door transition using validateDoorTransition
+/// 2. If valid, updates the door status to Open and sets the timer
+/// 3. If invalid, returns the unchanged elevator (operation rejected)
+/// 
+/// The validation ensures that doors can only be opened when the elevator
+/// is stopped at a floor, providing safety for passengers. The door will
+/// stay open for the specified number of ticks before automatically closing.
+/// 
+/// This function uses F# 8's anonymous record copy-and-update expression
+/// for concise and readable code.
+/// </remarks>
 let openDoor elevator doorOpenTime =
     match validateDoorTransition elevator Open with
     | Some error -> 
         // In a real system, we'd log the error
         // printfn "Door operation error: %s" error
-        elevator  // Return unchanged elevator
+        elevator  // Return unchanged elevator - validation failed
     | None ->
+        // Valid transition - update door status and set timer
         { elevator with 
             DoorStatus = Open
             DoorOpenTimeRemaining = Some doorOpenTime }
 
+/// <summary>
 /// Closes the door of an elevator
-/// Uses F# 8's improved record copy expression
-/// Returns the updated elevator state or the original if operation is invalid
+/// </summary>
+/// <param name="elevator">The elevator whose door should be closed</param>
+/// <returns>Updated elevator state with closed door or unchanged if operation is invalid</returns>
+/// <remarks>
+/// This function:
+/// 1. Validates the door transition using validateDoorTransition
+/// 2. If valid, updates the door status to Closed and clears the timer
+/// 3. If invalid, returns the unchanged elevator (operation rejected)
+/// 
+/// The validation ensures that doors can only be closed after the door timer
+/// has expired, ensuring passengers have sufficient time to enter/exit the elevator.
+/// 
+/// Door closure is a prerequisite for elevator movement - an elevator
+/// will remain stationary until its doors are closed.
+/// 
+/// This function uses F# 8's improved record copy expression for clean code.
+/// </remarks>
 let closeDoor elevator =
     match validateDoorTransition elevator Closed with
     | Some error -> 
         // In a real system, we'd log the error
         // printfn "Door operation error: %s" error
-        elevator  // Return unchanged elevator
+        elevator  // Return unchanged elevator - validation failed
     | None ->
+        // Valid transition - update door status and clear timer
         { elevator with 
             DoorStatus = Closed
             DoorOpenTimeRemaining = None }
@@ -466,6 +533,18 @@ let reconsiderExternalRequests system =
 /// The door timer ensures passengers have sufficient time to enter/exit
 /// before doors automatically close, and ensures the elevator never moves
 /// with open doors. This uses F# 8's enhanced pattern matching for clarity.
+/// 
+/// Safety considerations:
+/// - This mechanic ensures an elevator remains at a floor for a minimum time,
+///   providing sufficient time for passengers to board/alight
+/// - When the timer expires, closeDoor is called which performs safety checks
+/// - The mechanic is part of a larger safety system ensuring elevators never
+///   move with open doors
+/// 
+/// Relation to request handling:
+/// - Even though requests are considered "serviced" when doors open (see processArrival),
+///   this timer ensures passengers have time to physically enter/exit
+/// - By default, doors remain open for 3 ticks (configurable) before closing
 /// </remarks>
 let handleDoorTimer elevator =
     match elevator with
@@ -474,9 +553,11 @@ let handleDoorTimer elevator =
         { elevator with DoorOpenTimeRemaining = Some (time - 1) }
     | { DoorStatus = Open; DoorOpenTimeRemaining = Some 1 } -> 
         // Door timer has expired, close the door using safety checks
+        // closeDoor applies additional safety validations before closing
         closeDoor elevator
     | _ -> 
         // No action needed for closed doors or other states
+        // This includes elevators with closed doors or invalid timer states
         elevator
 
 /// <summary>
