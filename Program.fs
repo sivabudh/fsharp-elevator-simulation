@@ -57,32 +57,56 @@ let runDemoScenario () =
     for cmd in demoCommands do
         printfn "\nExecuting command: %s" cmd
         System.Threading.Thread.Sleep(1000)
-        
-        match processInput cmd state.System with
-        | Some Exit -> 
+
+        // Handle each command directly for the demo scenario
+        // This ensures we don't depend on the Result-based processInput
+        match cmd with 
+        | "exit" -> 
             printfn "Exiting demo..."
             state <- { state with IsRunning = false }
-        | Some Tick ->
-            state <- { state with System = processTick state.System }
+        | "tick" ->
+            // Using processTickWithConfig with configuration
+            state <- { state with System = processTickWithConfig state.System config.DoorOpenTicks }
             displayElevatorSystem state.System
-        | Some event ->
-            state <- { state with System = processEvent event state.System }
-            displayElevatorSystem state.System
-        | None ->
-            if cmd = "auto" then
-                printfn "Auto-tick enabled (will run for 5 seconds)"
-                state <- { state with AutoTick = true }
+        | "auto" ->
+            printfn "Auto-tick enabled (will run for 5 seconds)"
+            state <- { state with AutoTick = true }
+            
+            // Run auto-tick for a few seconds
+            for _ in 1..5 do
+                System.Threading.Thread.Sleep(1000)
+                state <- { state with System = processTickWithConfig state.System config.DoorOpenTicks }
+                displayElevatorSystem state.System
+        | "stop" ->
+            printfn "Auto-tick disabled"
+            state <- { state with AutoTick = false }
+        | s when s.StartsWith("call ") ->
+            // Parse call command manually: "call 5 up"
+            let parts = s.Split(' ')
+            if parts.Length = 3 then
+                let floorNum = int parts.[1]
+                let direction = 
+                    match (parts.[2]:string).ToLower() with
+                    | "up" -> Up
+                    | "down" -> Down
+                    | _ -> Up // Default to up for demo
                 
-                // Run auto-tick for a few seconds
-                // Using F# 7/8's enhanced for loop with range
-                for _ in 1..5 do
-                    System.Threading.Thread.Sleep(1000)
-                    // Using F# 8's enhanced record update
-                    state <- { state with System = processTick state.System }
-                    displayElevatorSystem state.System
-            elif cmd = "stop" then
-                printfn "Auto-tick disabled"
-                state <- { state with AutoTick = false }
+                let event = CallElevator(floorNum, direction)
+                state <- { state with System = processEventWithConfig event config.DoorOpenTicks state.System }
+                displayElevatorSystem state.System
+        | s when s.StartsWith("request ") ->
+            // Parse request command manually: "request 1 10"
+            let parts = s.Split(' ')
+            if parts.Length = 3 then
+                let elevatorId = int parts.[1]
+                let floorNum = int parts.[2]
+                
+                let event = RequestFloor(elevatorId, floorNum)
+                state <- { state with System = processEventWithConfig event config.DoorOpenTicks state.System }
+                displayElevatorSystem state.System
+        | _ ->
+            // Unknown command, just continue with the demo
+            ()
     
     printfn "\nDEMO COMPLETE!"
     printfn "To run interactive mode, restart the simulation without the --demo flag"

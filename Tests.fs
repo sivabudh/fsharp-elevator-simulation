@@ -140,6 +140,87 @@ let ``Processing arrival should update direction when there are more floors to v
     arrivedElevator.TargetFloor |> should equal (Some 5)
 
 [<Fact>]
+let ``validateDoorTransition should enforce safety rules`` () =
+    // Test case 1: Cannot open a door that's already open
+    let openDoorElevator = 
+        { createElevator 1 with 
+            DoorStatus = Open
+            DoorOpenTimeRemaining = Some 2 }
+    validateDoorTransition openDoorElevator Open |> should not' (equal None)
+    
+    // Test case 2: Cannot close a door that's already closed
+    let closedDoorElevator = createElevator 1  // Default is closed
+    validateDoorTransition closedDoorElevator Closed |> should not' (equal None)
+    
+    // Test case 3: Cannot open doors while moving between floors
+    let movingElevator = 
+        { createElevator 1 with 
+            Direction = Up
+            TargetFloor = Some 5
+            CurrentFloor = 3 }  // Not a requested floor
+    validateDoorTransition movingElevator Open |> should not' (equal None)
+    
+    // Test case 4: Cannot close doors while timer is still active
+    let activeTimerElevator = 
+        { createElevator 1 with 
+            DoorStatus = Open
+            DoorOpenTimeRemaining = Some 2 }
+    validateDoorTransition activeTimerElevator Closed |> should not' (equal None)
+    
+    // Test case 5: Can open doors at a requested floor
+    let atDestinationElevator = 
+        { createElevator 1 with 
+            CurrentFloor = 5
+            RequestedFloors = Set.ofList [5]
+            Direction = Up }
+    validateDoorTransition atDestinationElevator Open |> should equal None
+    
+    // Test case 6: Can close doors when timer is expired
+    let expiredTimerElevator = 
+        { createElevator 1 with 
+            DoorStatus = Open
+            DoorOpenTimeRemaining = Some 0 }
+    validateDoorTransition expiredTimerElevator Closed |> should equal None
+
+[<Fact>]
+let ``findNextStop should calculate correct next floor and direction`` () =
+    // Test case 1: Going up with floors above - should continue going up
+    let requestedFloors1 = Set.ofList [5; 7; 9]
+    let (target1, direction1) = findNextStop 3 Up requestedFloors1
+    target1 |> should equal (Some 5)  // Nearest floor above
+    direction1 |> should equal Up     // Continue going up
+    
+    // Test case 2: Going up with no floors above - should reverse direction
+    let requestedFloors2 = Set.ofList [1; 3]
+    let (target2, direction2) = findNextStop 5 Up requestedFloors2
+    target2 |> should equal (Some 3)  // Highest floor below
+    direction2 |> should equal Down   // Reverse to down
+    
+    // Test case 3: Going down with floors below - should continue going down
+    let requestedFloors3 = Set.ofList [2; 4; 6]
+    let (target3, direction3) = findNextStop 8 Down requestedFloors3
+    target3 |> should equal (Some 6)  // Nearest floor below
+    direction3 |> should equal Down   // Continue going down
+    
+    // Test case 4: Going down with no floors below - should reverse direction
+    let requestedFloors4 = Set.ofList [5; 7]
+    let (target4, direction4) = findNextStop 2 Down requestedFloors4
+    target4 |> should equal (Some 5)  // Lowest floor above
+    direction4 |> should equal Up     // Reverse to up
+    
+    // Test case 5: Idle with equidistant floors - should choose lowest
+    let requestedFloors5 = Set.ofList [3; 7]  // Both 2 floors away from current floor 5
+    let (target5, direction5) = findNextStop 5 Idle requestedFloors5
+    target5 |> should equal (Some 3)  // Closest floor (lowest in case of tie)
+    direction5 |> should equal Down   // Direction to this floor
+    
+    // Test case 6: Empty requested floors - should become idle with no target
+    let emptyFloors = Set.empty
+    let (target6, direction6) = findNextStop 5 Up emptyFloors
+    target6 |> should equal None      // No target
+    direction6 |> should equal Idle   // Become idle
+
+[<Fact>]
 let ``System tick should move all elevators`` () =
     // Using F# 8's improved record syntax and collection literals
     let elevator1 = 
