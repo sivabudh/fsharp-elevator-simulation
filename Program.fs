@@ -7,6 +7,29 @@ open ElevatorSimulation.UI
 open ElevatorSimulation.Config
 open System
 
+let tryParseInt (str: string) =
+    let mutable result = 0
+    match System.Int32.TryParse(str, &result) with
+    | true -> Some result
+    | _ -> None
+
+let parseCommand (input: string) =
+    let tokens = input.Trim().Split(' ')
+    match tokens with
+    | [| "call"; floorStr; dirStr |] ->
+        match tryParseInt floorStr, dirStr.ToLower() with
+        | Some floor, "up" -> Ok (CallElevator (floor, Up))
+        | Some floor, "down" -> Ok (CallElevator (floor, Down))
+        | _, _ -> Error "Invalid 'call' format. Use: call <floor> <up|down>"
+    | [| "request"; elevStr; floorStr |] ->
+        match tryParseInt elevStr, tryParseInt floorStr with
+        | Some elevatorId, Some floor -> Ok (RequestFloor (elevatorId, floor))
+        | _ -> Error "Invalid 'request' format. Use: request <elevatorId> <floor>"
+    | [| "tick" |] -> Ok Tick
+    | [| "print" |] -> Ok Print
+    | [| "exit" |] -> Ok Exit
+    | _ -> Error "Unknown command. Try 'call', 'request', 'tick', 'print', or 'exit'"
+
 /// Demonstrates the elevator simulation with a pre-programmed scenario
 let runDemoScenario () =
     Console.Clear()

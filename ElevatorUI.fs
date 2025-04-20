@@ -3,6 +3,10 @@ module ElevatorSimulation.UI
 open ElevatorSimulation.Types
 open System
 
+/// Validates if a floor number is within the valid range for the system
+let isValidFloor system floor =
+    floor >= 1 && floor <= system.FloorCount
+
 /// Creates a string representation of a floor in the elevator display
 /// Uses F# 8's list comprehension with implicit yields
 let displayFloor floor elevators floorCount =

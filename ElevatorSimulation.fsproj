@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="ElevatorConfig.fs" />
     <Compile Include="ElevatorTypes.fs" />
+    <Compile Include="SafeCollections.fs" />
     <Compile Include="ElevatorLogic.fs" />
     <Compile Include="ElevatorUI.fs" />
     <Compile Include="ElevatorSystem.fs" />

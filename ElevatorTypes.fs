@@ -68,3 +68,4 @@ type ElevatorEvent =
     | CloseDoor of int  // Elevator Id
     | Tick  // Simulation time tick
     | Exit  // Exit the simulation
+    | Print // Display current system state

@@ -6,6 +6,36 @@ open ElevatorSimulation.Config
 open System
 open System.Threading
 
+// These helpers are now defined in the SafeCollections module
+// and are kept here only for backward compatibility
+// They should be removed when all code is updated to use SafeCollections
+
+/// Safe access helper for getting the head of a list
+let tryHead list =
+    match list with
+    | x::_ -> Some x
+    | [] -> None
+
+/// Safe access helper for finding the minimum element by a function
+let tryMinBy fn list =
+    match list with
+    | [] -> None
+    | _ -> Some (List.minBy fn list)
+
+/// <summary>
+/// Validates if a floor number is within the valid range for the system
+/// </summary>
+/// <param name="floor">The floor number to validate</param>
+/// <param name="system">The elevator system defining the valid floor range</param>
+/// <returns>Result containing unit or an error message</returns>
+let isValidFloor floor (system: ElevatorSystem) =
+    if floor < 1 then
+        Error $"Invalid floor: {floor}. Floor numbers must be at least 1."
+    elif floor > system.FloorCount then
+        Error $"Invalid floor: {floor}. Maximum floor is {system.FloorCount}."
+    else
+        Ok ()
+
 /// Simulation state
 type SimulationState = {
     System: ElevatorSystem
@@ -100,14 +130,13 @@ let parseFloorCall (floorStr: string) (dirStr: string) (system: ElevatorSystem) 
         | (true, floorNum) -> Ok floorNum
         | _ -> Error (InvalidFloorNumber (-1, system.FloorCount))
     
-    // Validate floor number is within range
+    // Validate floor number is within range using our isValidFloor function
     let validateFloorResult = 
         parseFloorResult 
         |> Result.bind (fun floorNum ->
-            if floorNum < 1 || floorNum > system.FloorCount then
-                Error (InvalidFloorNumber (floorNum, system.FloorCount))
-            else
-                Ok floorNum)
+            match isValidFloor floorNum system with
+            | Ok () -> Ok floorNum
+            | Error _ -> Error (InvalidFloorNumber (floorNum, system.FloorCount)))
     
     // Parse direction
     let parseDirectionResult =
@@ -155,10 +184,11 @@ let parseElevatorRequest (elevatorStr: string) (floorStr: string) (system: Eleva
         | Some e when e.CurrentFloor = floorNum && e.DoorStatus = Open -> 
             // Elevator is already at requested floor with doors open
             Error (SameFloorRequest floorNum)
-        | Some _ when floorNum < 1 || floorNum > system.FloorCount ->
-            Error (InvalidFloorNumber (floorNum, system.FloorCount))
-        | Some _ -> 
-            Ok { ElevatorId = elevatorId; TargetFloor = floorNum }
+        | Some _ ->
+            // Validate floor number using isValidFloor
+            match isValidFloor floorNum system with
+            | Error _ -> Error (InvalidFloorNumber (floorNum, system.FloorCount))
+            | Ok () -> Ok { ElevatorId = elevatorId; TargetFloor = floorNum }
     | Error e, _ -> Error e
     | _, Error e -> Error e
 
@@ -203,6 +233,8 @@ let processInput (input: string) (system: ElevatorSystem) =
         Ok Exit
     | [| "tick" |] -> 
         Ok Tick
+    | [| "print" |] ->
+        Ok Print
     | [| "auto" |] -> 
         // Special cases handled separately - not errors but not regular events
         Error InvalidCommand  
@@ -306,7 +338,7 @@ let rec runSimulation state =
                 printfn "Auto-tick disabled"
                 runSimulation { state with AutoTick = false }
             | _ ->
-                // Using F# 8's enhanced pattern matching with Result type
+                // Using our own processInput function for parsing commands
                 match processInput input state.System with
                 | Ok Exit ->
                     printfn "Exiting simulation..."
@@ -317,29 +349,13 @@ let rec runSimulation state =
                     ElevatorSimulation.UI.displayElevatorSystem updatedSystem
                     runSimulation { state with System = updatedSystem }
                 | Ok event ->
-                    // Using function composition and record update
+                    // Handle other elevator events
                     let updatedSystem = processEvent event state.System
                     ElevatorSimulation.UI.displayElevatorSystem updatedSystem
                     runSimulation { state with System = updatedSystem }
-                | Error InvalidCommand when input.Trim().ToLower() = "auto" || input.Trim().ToLower() = "stop" ->
-                    // These are special commands handled above, not errors
-                    // Just continue the simulation
-                    runSimulation state
-                | Error InvalidFormat ->
-                    // Format error - the error message was already displayed
-                    // Just wait for the auto-tick thread and continue
-                    match autoTickThread with
-                    | Some thread -> thread.Join()
-                    | None -> ()
-                    
-                    if state.AutoTick then
-                        let updatedSystem = processTick state.System
-                        ElevatorSimulation.UI.displayElevatorSystem updatedSystem
-                        runSimulation { state with System = updatedSystem }
-                    else
-                        runSimulation state
-                | Error _ ->
-                    // An error occurred and was already printed - just continue
+                | Error error ->
+                    // Display the error message
+                    printfn "Error: %s" (error.ToString())
                     
                     // Wait for auto-tick thread if it's running
                     match autoTickThread with
