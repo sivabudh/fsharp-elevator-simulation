@@ -4,6 +4,7 @@ open ElevatorSimulation.Types
 open ElevatorSimulation.Logic
 open ElevatorSimulation.System
 open ElevatorSimulation.UI
+open ElevatorSimulation.Config
 open System
 
 /// Demonstrates the elevator simulation with a pre-programmed scenario
@@ -12,14 +13,20 @@ let runDemoScenario () =
     printfn "Elevator Simulation - DEMO MODE"
     printfn "============================="
     
-    // Use default values
-    let elevatorCount = 3
-    let floorCount = 10
+    // Use custom configuration for demo
+    let config = {
+        defaultConfig with 
+            ElevatorCount = 3
+            FloorCount = 10
+            TickIntervalMs = 1000
+            DoorOpenTicks = 3
+    }
     
-    printfn "Configuration: %d elevators, %d floors" elevatorCount floorCount
+    printfn "Configuration: %d elevators, %d floors, door open time: %d ticks" 
+        config.ElevatorCount config.FloorCount config.DoorOpenTicks
     
     // Create initial simulation state
-    let mutable state = createSimulation elevatorCount floorCount
+    let mutable state = createSimulationWithConfig config
     
     // Display initial state
     displayElevatorSystem state.System
@@ -83,14 +90,20 @@ let main argv =
         printfn "Elevator Simulation"
         printfn "==================="
         
-        // Use default values for Replit environment
-        let elevatorCount = 3
-        let floorCount = 10
+        // Configure the simulation
+        let config = {
+            defaultConfig with
+                ElevatorCount = 3
+                FloorCount = 10
+                TickIntervalMs = 1000
+                DoorOpenTicks = 3
+        }
         
-        printfn "Using default configuration: %d elevators, %d floors" elevatorCount floorCount
+        printfn "Using configuration: %d elevators, %d floors, door open time: %d ticks" 
+            config.ElevatorCount config.FloorCount config.DoorOpenTicks
         
         // Create and run simulation
-        let initialState = createSimulation elevatorCount floorCount
+        let initialState = createSimulationWithConfig config
         displayElevatorSystem initialState.System
         
         printfn "\nSimulation started!"

@@ -2,6 +2,7 @@ module ElevatorSimulation.System
 
 open ElevatorSimulation.Types
 open ElevatorSimulation.Logic
+open ElevatorSimulation.Config
 open System
 open System.Threading
 
@@ -10,17 +11,26 @@ type SimulationState = {
     System: ElevatorSystem
     IsRunning: bool
     AutoTick: bool
-    TickInterval: int  // milliseconds
+    Config: SimulationConfig
 }
 
-/// Creates a new simulation with the given number of elevators and floors
-let createSimulation elevatorCount floorCount =
+/// Creates a new simulation with the given configuration
+let createSimulationWithConfig config =
     {
-        System = createElevatorSystem elevatorCount floorCount
+        System = createElevatorSystem config.ElevatorCount config.FloorCount
         IsRunning = true
         AutoTick = false
-        TickInterval = 1000  // 1 second
+        Config = config
     }
+
+/// Creates a new simulation with the default configuration
+let createSimulation elevatorCount floorCount =
+    let config = {
+        defaultConfig with 
+            ElevatorCount = elevatorCount
+            FloorCount = floorCount
+    }
+    createSimulationWithConfig config
 
 /// Processes user input and returns the corresponding event
 let processInput (input: string) (system: ElevatorSystem) =
@@ -81,7 +91,7 @@ let rec runSimulation state =
         let autoTickThread = 
             if state.AutoTick then
                 let thread = Thread(fun () ->
-                    Thread.Sleep(state.TickInterval)
+                    Thread.Sleep(state.Config.TickIntervalMs)
                     if state.AutoTick then  // Check again in case it was changed
                         Console.WriteLine("\nAuto tick...")
                 )

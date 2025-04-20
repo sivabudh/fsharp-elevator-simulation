@@ -11,6 +11,7 @@ let createElevator id =
         TargetFloor = None
         Direction = Idle
         DoorStatus = Closed
+        DoorOpenTimeRemaining = None
         RequestedFloors = Set.empty
     }
 
@@ -167,21 +168,28 @@ let processArrival elevator =
             | None -> Idle
             | Some target -> calculateDirection elevator.CurrentFloor target
         
+        // Using a default value here, will be configurable 
+        // when called through processArrivalWithConfig
         { elevator with 
             DoorStatus = Open
+            DoorOpenTimeRemaining = Some 3  // Default to 3 ticks
             RequestedFloors = newRequestedFloors
             TargetFloor = nextTarget
             Direction = newDirection }
     else
         elevator
 
-/// Opens the door of an elevator
-let openDoor elevator =
-    { elevator with DoorStatus = Open }
+/// Opens the door of an elevator with the specified door open time
+let openDoor elevator doorOpenTime =
+    { elevator with 
+        DoorStatus = Open
+        DoorOpenTimeRemaining = Some doorOpenTime }
 
 /// Closes the door of an elevator
 let closeDoor elevator =
-    { elevator with DoorStatus = Closed }
+    { elevator with 
+        DoorStatus = Closed
+        DoorOpenTimeRemaining = None }
 
 /// Reconsiders pending external requests
 let reconsiderExternalRequests system =
@@ -214,16 +222,35 @@ let reconsiderExternalRequests system =
     
     { updatedSystem with ExternalRequests = remainingRequests }
 
+/// Helper function to handle door timer
+let handleDoorTimer elevator =
+    match elevator.DoorStatus, elevator.DoorOpenTimeRemaining with
+    | Open, Some time when time > 1 -> 
+        // Door is open and timer is still running, decrement timer
+        { elevator with DoorOpenTimeRemaining = Some (time - 1) }
+    | Open, Some 1 -> 
+        // Door timer has expired, close the door
+        closeDoor elevator
+    | _ -> elevator
+
 /// Process a simulation tick, updating all elevators
 let processTick system =
     let updatedElevators =
         system.Elevators
         |> List.map (fun elevator ->
-            match elevator.DoorStatus, elevator.Direction with
-            | Open, _ -> elevator  // Don't move when doors are open
-            | Closed, Idle -> elevator  // Don't move when idle
+            // First handle door timer if door is open
+            let elevatorWithDoorHandled = handleDoorTimer elevator
+            
+            match elevatorWithDoorHandled.DoorStatus, elevatorWithDoorHandled.Direction with
+            | Open, _ -> 
+                // Don't move when doors are open
+                elevatorWithDoorHandled  
+            | Closed, Idle -> 
+                // Don't move when idle
+                elevatorWithDoorHandled  
             | Closed, _ -> 
-                let movedElevator = moveElevator elevator
+                // Move elevator and process arrival
+                let movedElevator = moveElevator elevatorWithDoorHandled
                 processArrival movedElevator)
     
     { system with Elevators = updatedElevators }
@@ -245,7 +272,7 @@ let processEvent event system =
         { system with
             Elevators = 
                 system.Elevators
-                |> List.map (fun e -> if e.Id = elevatorId then openDoor e else e) }
+                |> List.map (fun e -> if e.Id = elevatorId then openDoor e 3 else e) }
     | CloseDoor elevatorId ->
         { system with
             Elevators = 
@@ -255,3 +282,14 @@ let processEvent event system =
         processTick system
     | Exit ->
         system
+
+/// Process an elevator event with configuration
+let processEventWithConfig event doorOpenTicks system =
+    match event with
+    | OpenDoor elevatorId ->
+        { system with
+            Elevators = 
+                system.Elevators
+                |> List.map (fun e -> if e.Id = elevatorId then openDoor e doorOpenTicks else e) }
+    | _ -> 
+        processEvent event system

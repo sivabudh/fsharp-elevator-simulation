@@ -44,7 +44,10 @@ type ElevatorState = {
     TargetFloor: int option
     Direction: Direction
     DoorStatus: DoorStatus
-    RequestedFloors: Set<int>  // Set of floors this elevator needs to visit
+    /// Remaining ticks before door closes (when DoorStatus is Open)
+    DoorOpenTimeRemaining: int option
+    /// Set of floors this elevator needs to visit
+    RequestedFloors: Set<int>
 }
 
 /// Represents the entire elevator system
