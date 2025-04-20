@@ -132,6 +132,74 @@ let shouldStopAtFloor elevator =
      | None -> false)
 
 /// <summary>
+/// Finds floors that are in a particular direction from the current floor
+/// </summary>
+/// <param name="currentFloor">The elevator's current floor</param>
+/// <param name="requestedFloors">Set of floors requested by users</param>
+/// <param name="direction">Direction to check (Up or Down)</param>
+/// <returns>Set of floors in the specified direction</returns>
+let private findFloorsInDirection currentFloor requestedFloors direction =
+    match direction with
+    | Up -> requestedFloors |> Set.filter (fun f -> f > currentFloor)
+    | Down -> requestedFloors |> Set.filter (fun f -> f < currentFloor)
+    | _ -> Set.empty  // No floors in Idle direction
+
+/// <summary>
+/// Finds the best floor to visit when continuing in the current direction
+/// </summary>
+/// <param name="floorsInDirection">Floors requested in the current direction</param>
+/// <param name="direction">Current travel direction</param>
+/// <returns>Option containing the next floor to visit</returns>
+let private findNextFloorInDirection floorsInDirection direction =
+    if Set.isEmpty floorsInDirection then
+        None
+    else
+        match direction with
+        | Up -> Some (Set.minElement floorsInDirection)  // Lowest floor above current
+        | Down -> Some (Set.maxElement floorsInDirection)  // Highest floor below current
+        | _ -> None
+
+/// <summary>
+/// Determines best floor when needing to reverse direction
+/// </summary>
+/// <param name="requestedFloors">All requested floors</param>
+/// <param name="reversedDirection">The new direction after reversal</param>
+/// <returns>Option with floor to target after reversal</returns>
+let private findBestFloorAfterReversal requestedFloors reversedDirection =
+    if Set.isEmpty requestedFloors then
+        None
+    else
+        match reversedDirection with
+        | Down -> Some (Set.maxElement requestedFloors)  // Highest floor when reversing to down
+        | Up -> Some (Set.minElement requestedFloors)    // Lowest floor when reversing to up
+        | _ -> None  // Should not happen
+
+/// <summary>
+/// Finds the nearest requested floor for an idle elevator
+/// </summary>
+/// <param name="currentFloor">Current elevator position</param>
+/// <param name="requestedFloors">Set of floors requested</param>
+/// <returns>The nearest requested floor, preferring the lowest floor in case of ties</returns>
+let private findNearestRequestedFloor currentFloor requestedFloors =
+    // Calculate distance to each requested floor
+    let distanceToFloor f = abs (f - currentFloor)
+    
+    // Find the minimum distance
+    let minDistance = 
+        requestedFloors 
+        |> Set.map distanceToFloor
+        |> Set.minElement
+    
+    // Get all floors at this minimum distance
+    let nearestFloors = 
+        requestedFloors 
+        |> Set.filter (fun f -> distanceToFloor f = minDistance)
+    
+    // If multiple floors are equidistant, choose the lowest
+    // This is a policy decision that could be changed based on requirements
+    Set.minElement nearestFloors
+
+/// <summary>
 /// Finds the next stop for an elevator based on its current position, 
 /// direction, and remaining requested floors
 /// </summary>
@@ -146,64 +214,71 @@ let shouldStopAtFloor elevator =
 /// 3. For idle elevators, select the nearest floor (defaulting to the lowest if equidistant)
 /// </remarks>
 let findNextStop currentFloor currentDirection requestedFloors =
+    // Handle empty request set - elevator becomes idle with no target
     if Set.isEmpty requestedFloors then
         (None, Idle)
     else
         match currentDirection with
         | Up -> 
-            // First priority: Continue upward if there are floors above
-            let floorsAbove = requestedFloors |> Set.filter (fun f -> f > currentFloor)
+            // CASE 1: Moving up, check if there are floors above to continue in same direction
+            let floorsAbove = findFloorsInDirection currentFloor requestedFloors Up
+            
             if not (Set.isEmpty floorsAbove) then
-                // Continue going up to the next floor above
-                let target = Set.minElement floorsAbove
-                (Some target, Up)
+                // Continue going up to the next higher floor
+                let nextFloor = findNextFloorInDirection floorsAbove Up |> Option.get
+                (Some nextFloor, Up)
             else
-                // Reverse direction to handle floors below
-                let target = Set.maxElement requestedFloors // Highest of remaining floors
-                (Some target, Down)
+                // No more floors above - reverse direction to handle floors below
+                let reversedTarget = findBestFloorAfterReversal requestedFloors Down |> Option.get
+                (Some reversedTarget, Down)
                 
         | Down -> 
-            // First priority: Continue downward if there are floors below
-            let floorsBelow = requestedFloors |> Set.filter (fun f -> f < currentFloor)
+            // CASE 2: Moving down, check if there are floors below to continue in same direction
+            let floorsBelow = findFloorsInDirection currentFloor requestedFloors Down
+            
             if not (Set.isEmpty floorsBelow) then
-                // Continue going down to the next floor below
-                let target = Set.maxElement floorsBelow
-                (Some target, Down)
+                // Continue going down to the next lower floor
+                let nextFloor = findNextFloorInDirection floorsBelow Down |> Option.get
+                (Some nextFloor, Down)
             else
-                // Reverse direction to handle floors above
-                let target = Set.minElement requestedFloors // Lowest of remaining floors
-                (Some target, Up)
+                // No more floors below - reverse direction to handle floors above
+                let reversedTarget = findBestFloorAfterReversal requestedFloors Up |> Option.get
+                (Some reversedTarget, Up)
                 
         | Idle -> 
-            // For idle elevators, find the nearest requested floor
-            let distanceToFloor f = abs (f - currentFloor)
-            // F# 8 doesn't have Set.groupBy, so using a different approach
-            let minDistance = 
-                requestedFloors 
-                |> Set.map distanceToFloor
-                |> Set.minElement
+            // CASE 3: Elevator is idle, find the nearest requested floor
+            let target = findNearestRequestedFloor currentFloor requestedFloors
             
-            // Get all floors at this minimum distance
-            let nearestFloors = 
-                requestedFloors 
-                |> Set.filter (fun f -> distanceToFloor f = minDistance)
-            
-            // If there are multiple equidistant floors, choose the lowest by default
-            let target = Set.minElement nearestFloors
+            // Calculate direction to reach this floor
             let newDirection = calculateDirection currentFloor target
             (Some target, newDirection)
 
+/// <summary>
 /// Processes the arrival of an elevator at a floor
+/// </summary>
+/// <param name="elevator">The current elevator state</param>
+/// <returns>Updated elevator state after arrival processing</returns>
+/// <remarks>
+/// When an elevator arrives at a requested floor:
+/// 1. The floor is removed from requested floors
+/// 2. Door status changes to Open with a timer (default: 3 ticks)
+/// 3. The next target and direction are recalculated
+/// 4. The elevator remains stationary until the door timer expires
+/// 
+/// Important: A floor is considered "serviced" at the moment the doors begin to open,
+/// not when they close. This ensures that passenger boarding/alighting is properly
+/// modeled with the timed door open state.
+/// </remarks>
 let processArrival elevator =
     if shouldStopAtFloor elevator then
         // Remove this floor from requested floors
         let newRequestedFloors = Set.remove elevator.CurrentFloor elevator.RequestedFloors
         
-        // Determine next target floor and direction using the extracted logic
+        // Determine next target floor and direction using the scheduling algorithm
         let (nextTarget, newDirection) = findNextStop elevator.CurrentFloor elevator.Direction newRequestedFloors
         
-        // Using a default value here, will be configurable 
-        // when called through processArrivalWithConfig
+        // Using a default door open time here
+        // For configurable timing, use processArrivalWithConfig instead
         { elevator with 
             DoorStatus = Open
             DoorOpenTimeRemaining = Some 3  // Default to 3 ticks
@@ -301,81 +376,148 @@ let reconsiderExternalRequests system =
     
     { updatedSystem with ExternalRequests = remainingRequests }
 
-/// Helper function to handle door timer
-/// Uses F# 8's enhanced pattern matching with type test patterns
+/// <summary>
+/// Handles the door timer mechanics for elevator doors
+/// </summary>
+/// <param name="elevator">The current elevator state</param>
+/// <returns>An updated elevator with adjusted door timing or closed doors</returns>
+/// <remarks>
+/// This function implements the timer mechanism for automatic door closing:
+/// 1. If doors are open with time > 1, decrement the timer
+/// 2. If doors are open with time = 1, automatically close the doors
+/// 3. Leave elevator unchanged in all other cases
+/// 
+/// The door timer ensures passengers have sufficient time to enter/exit
+/// before doors automatically close, and ensures the elevator never moves
+/// with open doors. This uses F# 8's enhanced pattern matching for clarity.
+/// </remarks>
 let handleDoorTimer elevator =
     match elevator with
     | { DoorStatus = Open; DoorOpenTimeRemaining = Some time } when time > 1 -> 
         // Door is open and timer is still running, decrement timer
         { elevator with DoorOpenTimeRemaining = Some (time - 1) }
     | { DoorStatus = Open; DoorOpenTimeRemaining = Some 1 } -> 
-        // Door timer has expired, close the door
+        // Door timer has expired, close the door using safety checks
         closeDoor elevator
-    | _ -> elevator
+    | _ -> 
+        // No action needed for closed doors or other states
+        elevator
 
-/// Process a simulation tick, updating all elevators
-/// Uses F# 8's enhanced pattern matching with as patterns
+/// <summary>
+/// Process a simulation tick, updating all elevators with default door timing
+/// </summary>
+/// <param name="system">The current elevator system state</param>
+/// <returns>Updated elevator system after processing a time step</returns>
+/// <remarks>
+/// This is the standard tick processor that uses the default door open time.
+/// It follows the same sequence as processTickWithConfig:
+/// 
+/// 1. Handle door timers for all elevators with open doors
+/// 2. Move eligible elevators (doors closed and not idle)
+/// 3. Process arrivals at floors for moved elevators
+/// 4. Reconsider any external requests that weren't assigned
+/// 
+/// This function uses F# 8's enhanced pattern matching with as-patterns
+/// for improved readability and type safety.
+/// </remarks>
 let processTick system =
     let updatedElevators =
         system.Elevators
         |> List.map (fun elevator ->
-            // First handle door timer if door is open
+            // Step 1: Handle door timer if door is open
             let elevatorWithDoorHandled = handleDoorTimer elevator
             
-            // Using F# 8's enhanced pattern matching
+            // Step 2 & 3: Handle movement based on door status and direction
             match elevatorWithDoorHandled with
             | { DoorStatus = Open } as e -> 
-                // Don't move when doors are open
+                // Safety rule: Don't move when doors are open
                 e  
             | { DoorStatus = Closed; Direction = Idle } as e -> 
-                // Don't move when idle
+                // Optimization: Don't move when idle
                 e  
             | { DoorStatus = Closed } as e -> 
-                // Move elevator and process arrival
+                // Move elevator and process arrival with default door timing
                 let movedElevator = moveElevator e
                 processArrival movedElevator)
     
+    // Step 4: Update system and reconsider any pending external requests
     { system with Elevators = updatedElevators }
     |> reconsiderExternalRequests
 
-/// Process an elevator event
+/// <summary>
+/// Process an elevator event with standard parameters
+/// </summary>
+/// <param name="event">The elevator event to process</param>
+/// <param name="system">The current elevator system state</param>
+/// <returns>Updated elevator system after processing the event</returns>
+/// <remarks>
+/// Handles various elevator events:
+/// - RequestFloor: Internal request from inside an elevator
+/// - CallElevator: External request from a floor button
+/// - MoveElevator: Manual command to move a specific elevator
+/// - OpenDoor: Command to open doors (with default timing)
+/// - CloseDoor: Command to close doors
+/// - Tick: Advance simulation by one time step
+/// - Exit: No-op that returns system unchanged
+/// 
 /// Uses F# 8's enhanced pattern matching and list comprehensions
+/// for more concise and readable code.
+/// </remarks>
 let processEvent event system =
     match event with
     | RequestFloor (elevatorId, floor) ->
+        // Process request from inside elevator
         processInternalRequest elevatorId floor system
     | CallElevator (floor, direction) ->
+        // Process request from floor button
         processExternalRequest floor direction system
     | MoveElevator elevatorId ->
+        // Move specific elevator (manual command)
         { system with
             Elevators = 
                 [ for e in system.Elevators -> 
                     if e.Id = elevatorId then moveElevator e else e ] }
     | OpenDoor elevatorId ->
+        // Open doors with default time (3 ticks)
         { system with
             Elevators = 
                 [ for e in system.Elevators -> 
                     if e.Id = elevatorId then openDoor e 3 else e ] }
     | CloseDoor elevatorId ->
+        // Close doors (subject to safety validations)
         { system with
             Elevators = 
                 [ for e in system.Elevators -> 
                     if e.Id = elevatorId then closeDoor e else e ] }
     | Tick ->
+        // Advance simulation by one time step
         processTick system
     | Exit ->
+        // No-op, return system unchanged
         system
 
+/// <summary>
 /// Processes the arrival of an elevator at a floor with configurable door open time
+/// </summary>
+/// <param name="elevator">The current elevator state</param>
+/// <param name="doorOpenTicks">Number of ticks the door should remain open</param>
+/// <returns>Updated elevator state after arrival processing</returns>
+/// <remarks>
+/// This is a configurable version of processArrival that allows the door open time
+/// to be specified. This enables integration with the elevator configuration system
+/// where door timing can be adjusted dynamically.
+/// 
+/// Same logic as processArrival applies for how floor requests are considered "serviced".
+/// </remarks>
 let processArrivalWithConfig elevator doorOpenTicks =
     if shouldStopAtFloor elevator then
         // Remove this floor from requested floors
         let newRequestedFloors = Set.remove elevator.CurrentFloor elevator.RequestedFloors
         
-        // Determine next target floor and direction using the extracted logic
+        // Determine next target floor and direction using the scheduling algorithm
         let (nextTarget, newDirection) = findNextStop elevator.CurrentFloor elevator.Direction newRequestedFloors
         
-        // Using the provided doorOpenTicks value
+        // Using the provided doorOpenTicks value from configuration
         { elevator with 
             DoorStatus = Open
             DoorOpenTimeRemaining = Some doorOpenTicks
@@ -385,40 +527,78 @@ let processArrivalWithConfig elevator doorOpenTicks =
     else
         elevator
 
+/// <summary>
 /// Process a simulation tick with configurable door open time
+/// </summary>
+/// <param name="system">The current elevator system state</param>
+/// <param name="doorOpenTicks">Number of ticks doors should remain open when elevator arrives at a floor</param>
+/// <returns>Updated elevator system after processing a time step</returns>
+/// <remarks>
+/// This function performs the following operations in sequence:
+/// 1. Handle door timers for all elevators with open doors
+/// 2. Move eligible elevators (doors closed and not idle)
+/// 3. Process arrivals at floors for moved elevators
+/// 4. Reconsider any external requests that weren't assigned
+/// 
+/// Safety rules enforced:
+/// - Elevators don't move when doors are open
+/// - Doors automatically close when their timer expires
+/// - Idle elevators remain stationary until given a destination
+/// </remarks>
 let processTickWithConfig system doorOpenTicks =
     let updatedElevators =
         system.Elevators
         |> List.map (fun elevator ->
-            // First handle door timer if door is open
+            // Step 1: Handle door timer if door is open
             let elevatorWithDoorHandled = handleDoorTimer elevator
             
-            // Using F# 8's enhanced pattern matching
+            // Step 2 & 3: Move eligible elevators and process arrivals
             match elevatorWithDoorHandled with
             | { DoorStatus = Open } as e -> 
-                // Don't move when doors are open
+                // Safety rule: Don't move when doors are open
                 e  
             | { DoorStatus = Closed; Direction = Idle } as e -> 
-                // Don't move when idle
+                // Optimization: Don't move when idle
                 e  
             | { DoorStatus = Closed } as e -> 
-                // Move elevator and process arrival with config
+                // Move elevator and process arrival with configurable door timing
                 let movedElevator = moveElevator e
                 processArrivalWithConfig movedElevator doorOpenTicks)
     
+    // Step 4: Update system and reconsider any pending external requests
     { system with Elevators = updatedElevators }
     |> reconsiderExternalRequests
 
-/// Process an elevator event with configuration
-/// Uses F# 8's list comprehension syntax
+/// <summary>
+/// Process an elevator event with configurable door open time
+/// </summary>
+/// <param name="event">The elevator event to process</param>
+/// <param name="doorOpenTicks">Number of ticks doors should remain open</param>
+/// <param name="system">The current elevator system state</param>
+/// <returns>Updated elevator system after processing the event</returns>
+/// <remarks>
+/// This function extends processEvent by adding door timing configuration.
+/// It handles two events specially with the provided door timing:
+/// - OpenDoor: Uses the configured time instead of the default
+/// - Tick: Processes tick with configurable door timing
+/// 
+/// All other events delegate to the standard processEvent function.
+/// This allows for dynamic adjustment of door timing through configuration,
+/// ensuring consistent door behavior throughout the system.
+/// 
+/// Uses F# 8's list comprehension syntax for more concise code.
+/// </remarks>
 let processEventWithConfig event doorOpenTicks system =
     match event with
     | OpenDoor elevatorId ->
+        // Open doors with configurable time
         { system with
             Elevators = 
                 [ for e in system.Elevators -> 
                     if e.Id = elevatorId then openDoor e doorOpenTicks else e ] }
     | Tick ->
+        // Advance simulation with configurable door timing
         processTickWithConfig system doorOpenTicks
     | _ -> 
+        // Other events use standard processing
         processEvent event system
