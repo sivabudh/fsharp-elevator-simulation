@@ -1,4 +1,4 @@
-modules = ["dotnet", "dotnet-6.0", "dotnet-8.0"]
+modules = ["dotnet", "dotnet-6.0", "dotnet-8.0", "dotnet-9.0"]
 
 [nix]
 channel = "stable-24_05"
