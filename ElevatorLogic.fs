@@ -124,12 +124,31 @@ let moveElevator elevator =
     | Up, Some _ -> { elevator with CurrentFloor = elevator.CurrentFloor + 1 }
     | Down, Some _ -> { elevator with CurrentFloor = elevator.CurrentFloor - 1 }
 
+/// <summary>
 /// Checks if the elevator should stop at the current floor
+/// </summary>
+/// <param name="elevator">The elevator state to check</param>
+/// <returns>True if the elevator should stop at its current floor, false otherwise</returns>
+/// <remarks>
+/// An elevator should stop at its current floor in two cases:
+/// 1. The current floor is in the set of requested floors (internal or external requests)
+/// 2. The current floor matches the elevator's target floor
+/// 
+/// When an elevator stops at a floor, the request is considered "serviced" at the moment 
+/// the doors begin to open (see processArrival), not when they close. This aligns with
+/// real elevator behavior where passengers begin boarding once doors start opening.
+/// </remarks>
 let shouldStopAtFloor elevator =
-    Set.contains elevator.CurrentFloor elevator.RequestedFloors ||
-    (match elevator.TargetFloor with
-     | Some target -> target = elevator.CurrentFloor
-     | None -> false)
+    // Stop if current floor is directly requested
+    let isFloorRequested = Set.contains elevator.CurrentFloor elevator.RequestedFloors
+    
+    // Also stop if current floor is the target floor
+    let isTargetFloor = 
+        match elevator.TargetFloor with
+        | Some target -> target = elevator.CurrentFloor
+        | None -> false
+        
+    isFloorRequested || isTargetFloor
 
 /// <summary>
 /// Finds floors that are in a particular direction from the current floor
@@ -200,6 +219,85 @@ let private findNearestRequestedFloor currentFloor requestedFloors =
     Set.minElement nearestFloors
 
 /// <summary>
+/// Determines if the elevator should reverse its direction
+/// </summary>
+/// <param name="currentFloor">The current floor position</param>
+/// <param name="currentDirection">The current direction of travel</param>
+/// <param name="requestedFloors">Set of requested floors</param>
+/// <returns>True if the elevator should reverse direction, false otherwise</returns>
+let private shouldReverseDirection currentFloor currentDirection requestedFloors =
+    match currentDirection with
+    | Up ->
+        // Should reverse if no more floors above current floor
+        let floorsAbove = findFloorsInDirection currentFloor requestedFloors Up
+        Set.isEmpty floorsAbove
+    | Down ->
+        // Should reverse if no more floors below current floor
+        let floorsBelow = findFloorsInDirection currentFloor requestedFloors Down
+        Set.isEmpty floorsBelow
+    | Idle ->
+        // Idle elevators don't need to reverse (they pick a direction)
+        false
+
+/// <summary>
+/// Calculates the optimized target and direction for a moving elevator
+/// </summary>
+/// <param name="currentFloor">The elevator's current floor</param>
+/// <param name="currentDirection">Current direction of travel</param>
+/// <param name="requestedFloors">Set of requested floors</param>
+/// <returns>Tuple of (target floor, direction)</returns>
+let private calculateMovingElevatorTarget currentFloor currentDirection requestedFloors =
+    if shouldReverseDirection currentFloor currentDirection requestedFloors then
+        // Need to reverse direction
+        match currentDirection with
+        | Up -> 
+            // If going up with no more floors above, reverse to down
+            let reversedTarget = findBestFloorAfterReversal requestedFloors Down |> Option.get
+            (Some reversedTarget, Down)
+        | Down -> 
+            // If going down with no more floors below, reverse to up
+            let reversedTarget = findBestFloorAfterReversal requestedFloors Up |> Option.get
+            (Some reversedTarget, Up)
+        | Idle -> 
+            // This case shouldn't happen with moving elevators
+            (None, Idle)
+    else
+        // Continue in same direction
+        match currentDirection with
+        | Up ->
+            // Find next floor above
+            let floorsAbove = findFloorsInDirection currentFloor requestedFloors Up
+            let nextFloor = findNextFloorInDirection floorsAbove Up |> Option.get
+            (Some nextFloor, Up)
+        | Down ->
+            // Find next floor below
+            let floorsBelow = findFloorsInDirection currentFloor requestedFloors Down
+            let nextFloor = findNextFloorInDirection floorsBelow Down |> Option.get
+            (Some nextFloor, Down)
+        | Idle ->
+            // This case shouldn't happen with moving elevators
+            (None, Idle)
+
+/// <summary>
+/// Calculates the target and direction for an idle elevator
+/// </summary>
+/// <param name="currentFloor">The elevator's current floor</param>
+/// <param name="requestedFloors">Set of requested floors</param>
+/// <returns>Tuple of (target floor, direction)</returns>
+/// <remarks>
+/// For idle elevators, we choose the nearest requested floor, breaking ties
+/// by selecting the lowest floor. The direction is calculated based on the
+/// relationship between the current floor and target floor.
+/// </remarks>
+let private calculateIdleElevatorTarget currentFloor requestedFloors =
+    // For idle elevators, find the nearest floor
+    let target = findNearestRequestedFloor currentFloor requestedFloors
+            
+    // Calculate appropriate direction to reach this floor
+    let newDirection = calculateDirection currentFloor target
+    (Some target, newDirection)
+
+/// <summary>
 /// Finds the next stop for an elevator based on its current position, 
 /// direction, and remaining requested floors
 /// </summary>
@@ -212,6 +310,11 @@ let private findNearestRequestedFloor currentFloor requestedFloors =
 /// 1. Continue in current direction if there are requests in that direction
 /// 2. Reverse direction when reaching the last request in current direction
 /// 3. For idle elevators, select the nearest floor (defaulting to the lowest if equidistant)
+/// 
+/// The logic is divided into helper functions to make each step clearer:
+/// - shouldReverseDirection: Determines if direction change is needed
+/// - calculateMovingElevatorTarget: Handles logic for moving elevators
+/// - calculateIdleElevatorTarget: Specialized logic for idle elevators
 /// </remarks>
 let findNextStop currentFloor currentDirection requestedFloors =
     // Handle empty request set - elevator becomes idle with no target
@@ -219,39 +322,12 @@ let findNextStop currentFloor currentDirection requestedFloors =
         (None, Idle)
     else
         match currentDirection with
-        | Up -> 
-            // CASE 1: Moving up, check if there are floors above to continue in same direction
-            let floorsAbove = findFloorsInDirection currentFloor requestedFloors Up
-            
-            if not (Set.isEmpty floorsAbove) then
-                // Continue going up to the next higher floor
-                let nextFloor = findNextFloorInDirection floorsAbove Up |> Option.get
-                (Some nextFloor, Up)
-            else
-                // No more floors above - reverse direction to handle floors below
-                let reversedTarget = findBestFloorAfterReversal requestedFloors Down |> Option.get
-                (Some reversedTarget, Down)
-                
-        | Down -> 
-            // CASE 2: Moving down, check if there are floors below to continue in same direction
-            let floorsBelow = findFloorsInDirection currentFloor requestedFloors Down
-            
-            if not (Set.isEmpty floorsBelow) then
-                // Continue going down to the next lower floor
-                let nextFloor = findNextFloorInDirection floorsBelow Down |> Option.get
-                (Some nextFloor, Down)
-            else
-                // No more floors below - reverse direction to handle floors above
-                let reversedTarget = findBestFloorAfterReversal requestedFloors Up |> Option.get
-                (Some reversedTarget, Up)
-                
+        | Up | Down -> 
+            // Unified handling for moving elevators (up or down)
+            calculateMovingElevatorTarget currentFloor currentDirection requestedFloors
         | Idle -> 
-            // CASE 3: Elevator is idle, find the nearest requested floor
-            let target = findNearestRequestedFloor currentFloor requestedFloors
-            
-            // Calculate direction to reach this floor
-            let newDirection = calculateDirection currentFloor target
-            (Some target, newDirection)
+            // Special case for idle elevators
+            calculateIdleElevatorTarget currentFloor requestedFloors
 
 /// <summary>
 /// Processes the arrival of an elevator at a floor
