@@ -3,9 +3,19 @@ module ElevatorSimulation.UI
 open ElevatorSimulation.Types
 open System
 
+/// <summary>
 /// Validates if a floor number is within the valid range for the system
+/// </summary>
+/// <param name="system">The elevator system defining the valid floor range</param>
+/// <param name="floor">The floor number to validate</param>
+/// <returns>Result containing unit or an error message</returns>
 let isValidFloor system floor =
-    floor >= 1 && floor <= system.FloorCount
+    if floor < 1 then
+        Error $"Invalid floor: {floor}. Floor numbers must be at least 1."
+    elif floor > system.FloorCount then
+        Error $"Invalid floor: {floor}. Maximum floor is {system.FloorCount}."
+    else
+        Ok ()
 
 /// Creates a string representation of a floor in the elevator display
 /// Uses F# 8's list comprehension with implicit yields
