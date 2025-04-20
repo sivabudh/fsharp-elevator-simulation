@@ -198,25 +198,29 @@ let private findBestFloorAfterReversal requestedFloors reversedDirection =
 /// </summary>
 /// <param name="currentFloor">Current elevator position</param>
 /// <param name="requestedFloors">Set of floors requested</param>
-/// <returns>The nearest requested floor, preferring the lowest floor in case of ties</returns>
+/// <returns>A Result containing either the nearest floor or an error if the set is empty</returns>
 let private findNearestRequestedFloor currentFloor requestedFloors =
-    // Calculate distance to each requested floor
-    let distanceToFloor f = abs (f - currentFloor)
-    
-    // Find the minimum distance
-    let minDistance = 
-        requestedFloors 
-        |> Set.map distanceToFloor
-        |> Set.minElement
-    
-    // Get all floors at this minimum distance
-    let nearestFloors = 
-        requestedFloors 
-        |> Set.filter (fun f -> distanceToFloor f = minDistance)
-    
-    // If multiple floors are equidistant, choose the lowest
-    // This is a policy decision that could be changed based on requirements
-    Set.minElement nearestFloors
+    // Handle the empty set case first with Result pattern
+    if Set.isEmpty requestedFloors then
+        Error "No requested floors to find nearest from"
+    else
+        // Calculate distance to each requested floor
+        let distanceToFloor f = abs (f - currentFloor)
+        
+        // Find the minimum distance
+        let minDistance = 
+            requestedFloors 
+            |> Set.map distanceToFloor
+            |> Set.minElement
+        
+        // Get all floors at this minimum distance
+        let nearestFloors = 
+            requestedFloors 
+            |> Set.filter (fun f -> distanceToFloor f = minDistance)
+        
+        // If multiple floors are equidistant, choose the lowest
+        // This is a policy decision that could be changed based on requirements
+        Ok (Set.minElement nearestFloors)
 
 /// <summary>
 /// Determines if the elevator should reverse its direction
@@ -283,7 +287,7 @@ let private calculateMovingElevatorTarget currentFloor currentDirection requeste
 /// </summary>
 /// <param name="currentFloor">The elevator's current floor</param>
 /// <param name="requestedFloors">Set of requested floors</param>
-/// <returns>Tuple of (target floor, direction)</returns>
+/// <returns>Tuple of (target floor option, direction)</returns>
 /// <remarks>
 /// For idle elevators, we choose the nearest requested floor, breaking ties
 /// by selecting the lowest floor. The direction is calculated based on the
@@ -291,11 +295,14 @@ let private calculateMovingElevatorTarget currentFloor currentDirection requeste
 /// </remarks>
 let private calculateIdleElevatorTarget currentFloor requestedFloors =
     // For idle elevators, find the nearest floor
-    let target = findNearestRequestedFloor currentFloor requestedFloors
-            
-    // Calculate appropriate direction to reach this floor
-    let newDirection = calculateDirection currentFloor target
-    (Some target, newDirection)
+    match findNearestRequestedFloor currentFloor requestedFloors with
+    | Ok target ->
+        // Calculate appropriate direction to reach this floor
+        let newDirection = calculateDirection currentFloor target
+        (Some target, newDirection)
+    | Error _ ->
+        // If we couldn't find a target (empty set), stay idle
+        (None, Idle)
 
 /// <summary>
 /// Finds the next stop for an elevator based on its current position, 
@@ -374,11 +381,30 @@ let processArrival elevator =
         elevator
 
 /// <summary>
+/// Door operation error types for functional error handling
+/// </summary>
+type DoorOperationError =
+    | AlreadyOpen
+    | AlreadyClosed
+    | ElevatorMoving
+    | TimerActive of int // Timer value remaining
+    
+    /// <summary>
+    /// Converts the error to a user-friendly string message
+    /// </summary>
+    override this.ToString() =
+        match this with
+        | AlreadyOpen -> "Door is already open"
+        | AlreadyClosed -> "Door is already closed"
+        | ElevatorMoving -> "Cannot open doors while elevator is moving between floors"
+        | TimerActive ticks -> $"Cannot close doors yet, wait for timer ({ticks} ticks remaining)"
+
+/// <summary>
 /// Validates whether a door state transition is allowed based on elevator state
 /// </summary>
 /// <param name="elevator">The current elevator state</param>
 /// <param name="newDoorStatus">The new door status to transition to (Open or Closed)</param>
-/// <returns>Some error message if the transition is invalid, None if valid</returns>
+/// <returns>A Result indicating valid transition or specific error</returns>
 /// <remarks>
 /// Safety and validation rules:
 /// 1. Cannot open an already open door
@@ -393,38 +419,37 @@ let processArrival elevator =
 /// 
 /// This function uses a comprehensive pattern matching approach with guards to
 /// evaluate complex conditions while maintaining readability. The result is either
-/// None (transition allowed) or Some string with an explanation of why the transition
-/// is invalid.
+/// Ok unit (transition allowed) or Error with a specific error reason.
 /// </remarks>
 let validateDoorTransition elevator newDoorStatus =
     match elevator.DoorStatus, newDoorStatus with
     | Open, Open -> 
         // No need to open an already open door
-        Some "Door is already open"
+        Error AlreadyOpen
         
     | Closed, Closed -> 
         // No need to close an already closed door
-        Some "Door is already closed"
+        Error AlreadyClosed
         
     | Closed, Open when elevator.Direction <> Idle && 
                         not (shouldStopAtFloor elevator) -> 
         // Safety rule: Cannot open doors while moving between floors
         // This prevents doors being opened when the elevator is between floors,
         // which would be physically impossible and dangerous
-        Some "Cannot open doors while elevator is moving between floors"
+        Error ElevatorMoving
         
     | Open, Closed when elevator.DoorOpenTimeRemaining.IsSome && 
                        elevator.DoorOpenTimeRemaining.Value > 0 ->
         // Safety feature: Cannot close doors while timer is still active
         // This ensures doors remain open for the minimum required time,
         // allowing passengers to safely enter and exit
-        Some $"Cannot close doors yet, wait for timer ({elevator.DoorOpenTimeRemaining.Value} ticks remaining)"
+        Error (TimerActive elevator.DoorOpenTimeRemaining.Value)
         
     | _ -> 
         // All other transitions are valid:
         // - Opening closed doors when elevator is stopped or at requested floor
         // - Closing open doors after timer has expired
-        None
+        Ok ()
 
 /// <summary>
 /// Opens the door of an elevator with the specified door open time
@@ -447,15 +472,15 @@ let validateDoorTransition elevator newDoorStatus =
 /// </remarks>
 let openDoor elevator doorOpenTime =
     match validateDoorTransition elevator Open with
-    | Some error -> 
-        // In a real system, we'd log the error
-        // printfn "Door operation error: %s" error
-        elevator  // Return unchanged elevator - validation failed
-    | None ->
+    | Ok () ->
         // Valid transition - update door status and set timer
         { elevator with 
             DoorStatus = Open
             DoorOpenTimeRemaining = Some doorOpenTime }
+    | Error error -> 
+        // In a real system, we'd log the error
+        // printfn "Door operation error: %s" error.ToString()
+        elevator  // Return unchanged elevator - validation failed
 
 /// <summary>
 /// Closes the door of an elevator
@@ -478,15 +503,15 @@ let openDoor elevator doorOpenTime =
 /// </remarks>
 let closeDoor elevator =
     match validateDoorTransition elevator Closed with
-    | Some error -> 
-        // In a real system, we'd log the error
-        // printfn "Door operation error: %s" error
-        elevator  // Return unchanged elevator - validation failed
-    | None ->
+    | Ok () ->
         // Valid transition - update door status and clear timer
         { elevator with 
             DoorStatus = Closed
             DoorOpenTimeRemaining = None }
+    | Error error -> 
+        // In a real system, we'd log the error
+        // printfn "Door operation error: %s" error.ToString()
+        elevator  // Return unchanged elevator - validation failed
 
 /// Reconsiders pending external requests
 let reconsiderExternalRequests system =

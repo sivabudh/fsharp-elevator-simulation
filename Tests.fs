@@ -146,11 +146,15 @@ let ``validateDoorTransition should enforce safety rules`` () =
         { createElevator 1 with 
             DoorStatus = Open
             DoorOpenTimeRemaining = Some 2 }
-    validateDoorTransition openDoorElevator Open |> should not' (equal None)
+    match validateDoorTransition openDoorElevator Open with
+    | Error _ -> true |> should be True  // Expect error
+    | Ok _ -> false |> should be True    // Force failure if we get Ok
     
     // Test case 2: Cannot close a door that's already closed
     let closedDoorElevator = createElevator 1  // Default is closed
-    validateDoorTransition closedDoorElevator Closed |> should not' (equal None)
+    match validateDoorTransition closedDoorElevator Closed with
+    | Error _ -> true |> should be True  // Expect error
+    | Ok _ -> false |> should be True    // Force failure if we get Ok
     
     // Test case 3: Cannot open doors while moving between floors
     let movingElevator = 
@@ -158,14 +162,18 @@ let ``validateDoorTransition should enforce safety rules`` () =
             Direction = Up
             TargetFloor = Some 5
             CurrentFloor = 3 }  // Not a requested floor
-    validateDoorTransition movingElevator Open |> should not' (equal None)
+    match validateDoorTransition movingElevator Open with
+    | Error _ -> true |> should be True  // Expect error
+    | Ok _ -> false |> should be True    // Force failure if we get Ok
     
     // Test case 4: Cannot close doors while timer is still active
     let activeTimerElevator = 
         { createElevator 1 with 
             DoorStatus = Open
             DoorOpenTimeRemaining = Some 2 }
-    validateDoorTransition activeTimerElevator Closed |> should not' (equal None)
+    match validateDoorTransition activeTimerElevator Closed with
+    | Error _ -> true |> should be True  // Expect error
+    | Ok _ -> false |> should be True    // Force failure if we get Ok
     
     // Test case 5: Can open doors at a requested floor
     let atDestinationElevator = 
@@ -173,14 +181,20 @@ let ``validateDoorTransition should enforce safety rules`` () =
             CurrentFloor = 5
             RequestedFloors = Set.ofList [5]
             Direction = Up }
-    validateDoorTransition atDestinationElevator Open |> should equal None
+    validateDoorTransition atDestinationElevator Open 
+    |> function 
+       | Ok _ -> true |> should be True 
+       | Error _ -> false |> should be True
     
     // Test case 6: Can close doors when timer is expired
     let expiredTimerElevator = 
         { createElevator 1 with 
             DoorStatus = Open
             DoorOpenTimeRemaining = Some 0 }
-    validateDoorTransition expiredTimerElevator Closed |> should equal None
+    validateDoorTransition expiredTimerElevator Closed 
+    |> function 
+       | Ok _ -> true |> should be True
+       | Error _ -> false |> should be True
 
 [<Fact>]
 let ``findNextStop should calculate correct next floor and direction`` () =
