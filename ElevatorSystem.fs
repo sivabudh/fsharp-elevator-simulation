@@ -32,16 +32,31 @@ let createSimulation elevatorCount floorCount =
     }
     createSimulationWithConfig config
 
-/// Enhanced error reporting type for input validation
-type ValidationError =
-    | InvalidFloorNumber of int * int  // floor, max floor
-    | InvalidElevatorId of int * int   // elevator id, max id
-    | InvalidDirection of string       // invalid direction string
-    | SameFloorRequest of int          // requesting same floor
-    | ParseError of string             // general parsing error
-    | InvalidCommand                   // unrecognized command
+/// <summary>
+/// Enhanced error reporting types for input validation using a domain-specific approach
+/// </summary>
+/// <remarks>
+/// This implements a more structured error handling system using F#'s discriminated unions
+/// to provide type-safe and specific error cases that describe what went wrong during parsing.
+/// </remarks>
+
+/// Common parsing errors
+type ParseError =
+    | InvalidFormat
+    | InvalidFloorNumber of int * int    // floor, max floor
+    | InvalidElevatorId of int * int     // elevator id, max id
+    | InvalidDirection of string         // invalid direction string
+    | SameFloorRequest of int            // requesting same floor
+    | GeneralError of string             // unexpected errors
+    | InvalidCommand                     // unrecognized command
+
+    /// <summary>
+    /// Converts the error to a user-friendly string message
+    /// </summary>
     override this.ToString() =
         match this with
+        | InvalidFormat -> 
+            "Invalid command format. Type 'help' for examples of correctly formatted commands."
         | InvalidFloorNumber (floor, maxFloor) -> 
             $"Invalid floor number {floor}. Valid range: 1-{maxFloor}"
         | InvalidElevatorId (id, maxId) -> 
@@ -50,53 +65,121 @@ type ValidationError =
             $"Invalid direction '{dir}'. Use 'up' or 'down'"
         | SameFloorRequest floor -> 
             $"Elevator is already at floor {floor}"
-        | ParseError msg -> 
-            $"Invalid input: {msg}"
+        | GeneralError msg -> 
+            $"Error: {msg}"
         | InvalidCommand -> 
             "Invalid command. Try: call <floor> <up|down>, request <elevator> <floor>, tick, auto, stop, exit"
 
-/// Validates a floor call request
+/// <summary>
+/// Structure for a floor call request
+/// </summary>
+type FloorCallRequest = {
+    Floor: int
+    Direction: Direction
+}
+
+/// <summary>
+/// Structure for an elevator floor request
+/// </summary>
+type ElevatorRequest = {
+    ElevatorId: int
+    TargetFloor: int
+}
+
+/// <summary>
+/// Parses a floor call request from string inputs
+/// </summary>
+/// <param name="floorStr">String representing the floor number</param>
+/// <param name="dirStr">String representing the direction ("up" or "down")</param>
+/// <param name="system">The elevator system for validation</param>
+/// <returns>A Result containing either the valid request or a specific error</returns>
+let parseFloorCall (floorStr: string) (dirStr: string) (system: ElevatorSystem) : Result<FloorCallRequest, ParseError> =
+    try
+        // Try to parse the floor number
+        match System.Int32.TryParse(floorStr) with
+        | (true, floorNum) ->
+            // Validate floor number is within range
+            if floorNum < 1 || floorNum > system.FloorCount then
+                Error (InvalidFloorNumber (floorNum, system.FloorCount))
+            else
+                // Parse and validate direction
+                match dirStr.ToLower() with
+                | "up" -> Ok { Floor = floorNum; Direction = Up }
+                | "down" -> Ok { Floor = floorNum; Direction = Down }
+                | _ -> Error (InvalidDirection dirStr)
+        | _ -> 
+            Error (InvalidFloorNumber (-1, system.FloorCount))
+    with
+    | ex -> Error (GeneralError ex.Message)
+
+/// <summary>
+/// Parses an elevator request from string inputs
+/// </summary>
+/// <param name="elevatorStr">String representing the elevator ID</param>
+/// <param name="floorStr">String representing the target floor</param>
+/// <param name="system">The elevator system for validation</param>
+/// <returns>A Result containing either the valid request or a specific error</returns>
+let parseElevatorRequest (elevatorStr: string) (floorStr: string) (system: ElevatorSystem) : Result<ElevatorRequest, ParseError> =
+    try
+        // Try to parse the elevator ID and floor number
+        match System.Int32.TryParse(elevatorStr), System.Int32.TryParse(floorStr) with
+        | (true, elevatorId), (true, floorNum) ->
+            // Check if elevator exists
+            let elevator = system.Elevators |> List.tryFind (fun e -> e.Id = elevatorId)
+            
+            match elevator with
+            | None -> 
+                Error (InvalidElevatorId (elevatorId, system.Elevators.Length))
+            | Some e when e.CurrentFloor = floorNum && e.DoorStatus = Open -> 
+                // Elevator is already at requested floor with doors open
+                Error (SameFloorRequest floorNum)
+            | Some _ when floorNum < 1 || floorNum > system.FloorCount ->
+                Error (InvalidFloorNumber (floorNum, system.FloorCount))
+            | Some _ -> 
+                Ok { ElevatorId = elevatorId; TargetFloor = floorNum }
+        | (false, _), _ ->
+            Error (InvalidElevatorId (-1, system.Elevators.Length))
+        | _, (false, _) ->
+            Error (InvalidFloorNumber (-1, system.FloorCount))
+    with
+    | ex -> Error (GeneralError ex.Message)
+
+/// <summary>
+/// Validates a floor call request (for backward compatibility)
+/// </summary>
 let validateFloorCall floorNum dirString (system: ElevatorSystem) =
-    try
-        // Check floor number
-        if floorNum < 1 || floorNum > system.FloorCount then
-            Error (InvalidFloorNumber (floorNum, system.FloorCount))
-        else
-            // Parse direction (explicitly specify type info for string methods)
-            let dirLower = (dirString:string).ToLower()
-            match dirLower with
-            | "up" -> Ok (floorNum, Up)
-            | "down" -> Ok (floorNum, Down)
-            | _ -> Error (InvalidDirection dirString)
-    with
-    | ex -> Error (ParseError ex.Message)
+    // This uses the new parsing function but maintains the old return type
+    // for backward compatibility
+    match parseFloorCall (string floorNum) dirString system with
+    | Ok request -> Ok (request.Floor, request.Direction)
+    | Error err -> Error err
 
-/// Validates an elevator request
+/// <summary>
+/// Validates an elevator request (for backward compatibility)
+/// </summary>
 let validateElevatorRequest elevatorId floorNum (system: ElevatorSystem) =
-    try
-        // Check if elevator exists
-        let elevator = system.Elevators |> List.tryFind (fun e -> e.Id = elevatorId)
-        
-        match elevator with
-        | None -> 
-            Error (InvalidElevatorId (elevatorId, system.Elevators.Length))
-        | Some e when e.CurrentFloor = floorNum && e.DoorStatus = Open -> 
-            // Elevator is already at requested floor with doors open
-            Error (SameFloorRequest floorNum)
-        | Some _ when floorNum < 1 || floorNum > system.FloorCount ->
-            Error (InvalidFloorNumber (floorNum, system.FloorCount))
-        | Some _ -> 
-            Ok (elevatorId, floorNum)
-    with
-    | ex -> Error (ParseError ex.Message)
+    // This uses the new parsing function but maintains the old return type
+    // for backward compatibility
+    match parseElevatorRequest (string elevatorId) (string floorNum) system with
+    | Ok request -> Ok (request.ElevatorId, request.TargetFloor)
+    | Error err -> Error err
 
+/// <summary>
 /// Processes user input and returns the corresponding event
-/// Uses F# 8's enhanced pattern matching and Result type for error handling
+/// </summary>
+/// <param name="input">The command string entered by the user</param>
+/// <param name="system">The current elevator system state</param>
+/// <returns>A Result containing either the valid event or a specific error</returns>
+/// <remarks>
+/// This function uses F# 8's enhanced pattern matching and Result type for robust error handling.
+/// Each command type has specialized parsing to catch and report specific errors.
+/// </remarks>
 let processInput (input: string) (system: ElevatorSystem) =
-    // Using F# 7/8's pipeline operator with improved Array operations
-    let tokens = input.Trim().Split(' ') |> Array.map (fun s -> s.Trim())
+    // Split the input into tokens
+    let tokens = input.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries) 
+                |> Array.map (fun s -> s.Trim())
     
-    // Using F# 8's enhanced pattern matching for arrays
+    // Process based on command type
     match tokens with
     | [| "exit" |] -> 
         Ok Exit
@@ -107,37 +190,54 @@ let processInput (input: string) (system: ElevatorSystem) =
         Error InvalidCommand  
     | [| "stop" |] -> 
         Error InvalidCommand  
-    | [| "call"; floor; direction |] ->
-        try
-            let floorNum = int floor
-            match validateFloorCall floorNum direction system with
-            | Ok (floor, dir) -> Ok (CallElevator (floor, dir))
-            | Error e -> 
-                printfn "%s" (e.ToString())
-                Error e
-        with
-        | ex -> 
-            let error = ParseError ex.Message
+    | [| "call"; floorStr; directionStr |] ->
+        // Parse and validate floor call command
+        match parseFloorCall floorStr directionStr system with
+        | Ok request -> 
+            // Valid request - convert to elevator event
+            Ok (CallElevator (request.Floor, request.Direction))
+        | Error error -> 
+            // Report the specific error and return
             printfn "%s" (error.ToString())
             Error error
-    | [| "request"; elevator; floor |] ->
-        try
-            let elevatorId = int elevator
-            let floorNum = int floor
-            
-            match validateElevatorRequest elevatorId floorNum system with
-            | Ok (id, floor) -> Ok (RequestFloor (id, floor))
-            | Error e -> 
-                printfn "%s" (e.ToString())
-                Error e
-        with
-        | ex -> 
-            let error = ParseError ex.Message
+    | [| "call"; _; _; _ |] | [| "call"; _; _; _; _ |] ->
+        // Too many arguments for call command
+        let error = InvalidFormat
+        printfn "Error: Too many arguments for call command. Format: call <floor> <up|down>"
+        Error error
+    | [| "call"; _ |] ->
+        // Too few arguments for call command
+        let error = InvalidFormat
+        printfn "Error: Call command requires a floor number and direction (up/down)"
+        Error error
+    | [| "request"; elevatorStr; floorStr |] ->
+        // Parse and validate elevator request command
+        match parseElevatorRequest elevatorStr floorStr system with
+        | Ok request -> 
+            // Valid request - convert to elevator event
+            Ok (RequestFloor (request.ElevatorId, request.TargetFloor))
+        | Error error -> 
+            // Report the specific error and return
             printfn "%s" (error.ToString())
             Error error
-    | _ ->
-        printfn "%s" (InvalidCommand.ToString())
+    | [| "request"; _; _; _ |] | [| "request"; _; _; _; _ |] ->
+        // Too many arguments for request command
+        let error = InvalidFormat 
+        printfn "Error: Too many arguments for request command. Format: request <elevator> <floor>"
+        Error error
+    | [| "request"; _ |] ->
+        // Too few arguments for request command
+        let error = InvalidFormat
+        printfn "Error: Request command requires an elevator ID and a floor number"
+        Error error
+    | [| "help" |] ->
+        // Help command - handled separately in runSimulation
         Error InvalidCommand
+    | _ ->
+        // Unknown command
+        let error = InvalidCommand
+        printfn "%s" (error.ToString())
+        Error error
 
 /// Runs the simulation
 let rec runSimulation state =
@@ -207,6 +307,19 @@ let rec runSimulation state =
                     // These are special commands handled above, not errors
                     // Just continue the simulation
                     runSimulation state
+                | Error InvalidFormat ->
+                    // Format error - the error message was already displayed
+                    // Just wait for the auto-tick thread and continue
+                    match autoTickThread with
+                    | Some thread -> thread.Join()
+                    | None -> ()
+                    
+                    if state.AutoTick then
+                        let updatedSystem = processTick state.System
+                        ElevatorSimulation.UI.displayElevatorSystem updatedSystem
+                        runSimulation { state with System = updatedSystem }
+                    else
+                        runSimulation state
                 | Error _ ->
                     // An error occurred and was already printed - just continue
                     
