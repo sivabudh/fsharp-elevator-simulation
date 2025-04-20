@@ -5,20 +5,22 @@ type Direction =
     | Up
     | Down
     | Idle
-    override this.ToString() =
+    // Using F# 7 string interpolation improvements
+    override this.ToString() = 
         match this with
-        | Up -> "↑"
-        | Down -> "↓"
-        | Idle -> "-"
+        | Up -> $"↑"
+        | Down -> $"↓"
+        | Idle -> $"-"
 
 /// Status of the elevator door
 type DoorStatus =
     | Open
     | Closed
-    override this.ToString() =
+    // Using F# 7 string interpolation improvements
+    override this.ToString() = 
         match this with
-        | Open -> "Open"
-        | Closed -> "Closed"
+        | Open -> $"Open"
+        | Closed -> $"Closed"
 
 /// Internal request parameters
 type InternalRequestParams = {

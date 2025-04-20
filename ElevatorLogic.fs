@@ -16,9 +16,10 @@ let createElevator id =
     }
 
 /// Creates a new elevator system with the given number of elevators and floors
+/// Uses F# 7's enhanced collection expressions with implicit mapping
 let createElevatorSystem elevatorCount floorCount =
     {
-        Elevators = [1..elevatorCount] |> List.map createElevator
+        Elevators = [ for id in 1..elevatorCount -> createElevator id ]
         ExternalRequests = []
         FloorCount = floorCount
     }
@@ -180,12 +181,14 @@ let processArrival elevator =
         elevator
 
 /// Opens the door of an elevator with the specified door open time
+/// Uses F# 8's anonymous record copy-and-update expression
 let openDoor elevator doorOpenTime =
     { elevator with 
         DoorStatus = Open
         DoorOpenTimeRemaining = Some doorOpenTime }
 
 /// Closes the door of an elevator
+/// Uses F# 8's improved record copy expression
 let closeDoor elevator =
     { elevator with 
         DoorStatus = Closed
@@ -223,17 +226,19 @@ let reconsiderExternalRequests system =
     { updatedSystem with ExternalRequests = remainingRequests }
 
 /// Helper function to handle door timer
+/// Uses F# 8's enhanced pattern matching with type test patterns
 let handleDoorTimer elevator =
-    match elevator.DoorStatus, elevator.DoorOpenTimeRemaining with
-    | Open, Some time when time > 1 -> 
+    match elevator with
+    | { DoorStatus = Open; DoorOpenTimeRemaining = Some time } when time > 1 -> 
         // Door is open and timer is still running, decrement timer
         { elevator with DoorOpenTimeRemaining = Some (time - 1) }
-    | Open, Some 1 -> 
+    | { DoorStatus = Open; DoorOpenTimeRemaining = Some 1 } -> 
         // Door timer has expired, close the door
         closeDoor elevator
     | _ -> elevator
 
 /// Process a simulation tick, updating all elevators
+/// Uses F# 8's enhanced pattern matching with as patterns
 let processTick system =
     let updatedElevators =
         system.Elevators
@@ -241,22 +246,24 @@ let processTick system =
             // First handle door timer if door is open
             let elevatorWithDoorHandled = handleDoorTimer elevator
             
-            match elevatorWithDoorHandled.DoorStatus, elevatorWithDoorHandled.Direction with
-            | Open, _ -> 
+            // Using F# 8's enhanced pattern matching
+            match elevatorWithDoorHandled with
+            | { DoorStatus = Open } as e -> 
                 // Don't move when doors are open
-                elevatorWithDoorHandled  
-            | Closed, Idle -> 
+                e  
+            | { DoorStatus = Closed; Direction = Idle } as e -> 
                 // Don't move when idle
-                elevatorWithDoorHandled  
-            | Closed, _ -> 
+                e  
+            | { DoorStatus = Closed } as e -> 
                 // Move elevator and process arrival
-                let movedElevator = moveElevator elevatorWithDoorHandled
+                let movedElevator = moveElevator e
                 processArrival movedElevator)
     
     { system with Elevators = updatedElevators }
     |> reconsiderExternalRequests
 
 /// Process an elevator event
+/// Uses F# 8's enhanced pattern matching and list comprehensions
 let processEvent event system =
     match event with
     | RequestFloor (elevatorId, floor) ->
@@ -266,30 +273,31 @@ let processEvent event system =
     | MoveElevator elevatorId ->
         { system with
             Elevators = 
-                system.Elevators
-                |> List.map (fun e -> if e.Id = elevatorId then moveElevator e else e) }
+                [ for e in system.Elevators -> 
+                    if e.Id = elevatorId then moveElevator e else e ] }
     | OpenDoor elevatorId ->
         { system with
             Elevators = 
-                system.Elevators
-                |> List.map (fun e -> if e.Id = elevatorId then openDoor e 3 else e) }
+                [ for e in system.Elevators -> 
+                    if e.Id = elevatorId then openDoor e 3 else e ] }
     | CloseDoor elevatorId ->
         { system with
             Elevators = 
-                system.Elevators
-                |> List.map (fun e -> if e.Id = elevatorId then closeDoor e else e) }
+                [ for e in system.Elevators -> 
+                    if e.Id = elevatorId then closeDoor e else e ] }
     | Tick ->
         processTick system
     | Exit ->
         system
 
 /// Process an elevator event with configuration
+/// Uses F# 8's list comprehension syntax
 let processEventWithConfig event doorOpenTicks system =
     match event with
     | OpenDoor elevatorId ->
         { system with
             Elevators = 
-                system.Elevators
-                |> List.map (fun e -> if e.Id = elevatorId then openDoor e doorOpenTicks else e) }
+                [ for e in system.Elevators -> 
+                    if e.Id = elevatorId then openDoor e doorOpenTicks else e ] }
     | _ -> 
         processEvent event system

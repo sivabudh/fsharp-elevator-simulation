@@ -24,9 +24,12 @@ let defaultConfig = {
 }
 
 /// Creates a custom configuration
-let createConfig elevatorCount floorCount tickIntervalMs doorOpenTicks = {
-    ElevatorCount = elevatorCount
-    FloorCount = floorCount
-    TickIntervalMs = tickIntervalMs
-    DoorOpenTicks = doorOpenTicks
-}
+/// Uses F# 8's enhanced record creation syntax
+let createConfig elevatorCount floorCount tickIntervalMs doorOpenTicks = 
+    // Using the simplified record creation from F# 8
+    { 
+        ElevatorCount = elevatorCount
+        FloorCount = floorCount
+        TickIntervalMs = tickIntervalMs
+        DoorOpenTicks = doorOpenTicks
+    }

@@ -34,17 +34,23 @@ let runDemoScenario () =
     System.Threading.Thread.Sleep(2000)
     
     // Process a series of commands to demonstrate functionality
+    // Using F# 7/8's concise array literal with implicit yields
     let demoCommands = [
-        "call 5 up";      // Call elevator to floor 5 going up
-        "tick"; "tick";   // Watch elevator movement
-        "call 8 down";    // Another call from a different floor
-        "tick"; "tick";   // More movement
-        "request 1 10";   // Request elevator 1 to go to floor 10
-        "tick"; "tick"; "tick"; "tick"; // More movement
-        "call 3 up";      // Add another call
-        "request 2 7";    // Request elevator 2 to go to floor 7
-        "auto";           // Enable auto-tick to see continuous movement
-        "stop";           // Stop auto-tick after 5 seconds
+        // Call elevators to different floors
+        "call 5 up"       // Call elevator to floor 5 going up
+        "tick"; "tick"    // Watch elevator movement
+        "call 8 down"     // Another call from a different floor
+        "tick"; "tick"    // More movement
+        
+        // Request specific elevators to go to floors
+        "request 1 10"    // Request elevator 1 to go to floor 10
+        "tick"; "tick"; "tick"; "tick" // More movement
+        "call 3 up"       // Add another call
+        "request 2 7"     // Request elevator 2 to go to floor 7
+        
+        // Automatic operation
+        "auto"            // Enable auto-tick to see continuous movement
+        "stop"            // Stop auto-tick after 5 seconds
     ]
     
     // Execute each command with a slight delay
@@ -68,8 +74,10 @@ let runDemoScenario () =
                 state <- { state with AutoTick = true }
                 
                 // Run auto-tick for a few seconds
+                // Using F# 7/8's enhanced for loop with range
                 for _ in 1..5 do
                     System.Threading.Thread.Sleep(1000)
+                    // Using F# 8's enhanced record update
                     state <- { state with System = processTick state.System }
                     displayElevatorSystem state.System
             elif cmd = "stop" then

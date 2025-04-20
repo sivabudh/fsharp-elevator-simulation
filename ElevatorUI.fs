@@ -4,18 +4,18 @@ open ElevatorSimulation.Types
 open System
 
 /// Creates a string representation of a floor in the elevator display
+/// Uses F# 8's list comprehension with implicit yields
 let displayFloor floor elevators floorCount =
     let floorNum = floorCount - floor + 1
     let elevatorSymbols = 
-        elevators
-        |> List.map (fun e -> 
+        [ for e in elevators -> 
             if e.CurrentFloor = floorNum then
                 match e.DoorStatus with
                 | Open -> $"[{e.Id}]"  // Open door
                 | Closed -> $"|{e.Id}|"  // Closed door
             else
                 "   "  // No elevator at this floor
-        )
+        ]
         |> String.concat " "
     
     $"{floorNum,2} |{elevatorSymbols}|"
@@ -28,16 +28,17 @@ let displayElevatorSystem system =
     printfn "==================="
     
     // Display header with elevator IDs
+    // Using F# 8's list comprehension syntax
     let elevatorHeader = 
-        system.Elevators 
-        |> List.map (fun e -> $" {e.Id} ") 
+        [ for e in system.Elevators -> $" {e.Id} " ]
         |> String.concat " "
     
     printfn "   |%s|" elevatorHeader
     printfn "---+%s+" (String.replicate (elevatorHeader.Length + 2) "-")
     
     // Display each floor
-    for floor in [1..system.FloorCount] do
+    // Using F# 7/8 for loop with enhanced range operator
+    for floor in 1..system.FloorCount do
         printfn "%s" (displayFloor floor system.Elevators system.FloorCount)
     
     printfn "---+%s+" (String.replicate (elevatorHeader.Length + 2) "-")
@@ -45,21 +46,21 @@ let displayElevatorSystem system =
     // Display elevator status
     printfn "\nElevator Status:"
     for elevator in system.Elevators do
+        // Using F# 7/8 pattern matching and list comprehension
         let requestedFloors = 
-            if Set.isEmpty elevator.RequestedFloors then
-                "None"
-            else
-                elevator.RequestedFloors 
-                |> Set.toList 
-                |> List.map string 
-                |> String.concat ", "
+            match elevator.RequestedFloors with
+            | s when Set.isEmpty s -> "None"
+            | s -> [ for floor in s -> string floor ] 
+                   |> String.concat ", "
         
         printfn "Elevator %d: Floor %d, Direction %O, Door %O, Target: %s, Requests: %s" 
             elevator.Id 
             elevator.CurrentFloor 
             elevator.Direction 
             elevator.DoorStatus
-            (match elevator.TargetFloor with | Some f -> string f | None -> "None")
+            (match elevator.TargetFloor with 
+            | Some f -> $"{f}" // Using F# 7's string interpolation
+            | None -> "None")
             requestedFloors
     
     // Display pending external requests

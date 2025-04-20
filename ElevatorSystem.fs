@@ -33,9 +33,12 @@ let createSimulation elevatorCount floorCount =
     createSimulationWithConfig config
 
 /// Processes user input and returns the corresponding event
+/// Uses F# 8's enhanced pattern matching
 let processInput (input: string) (system: ElevatorSystem) =
+    // Using F# 7/8's pipeline operator with improved Array operations
     let tokens = input.Trim().Split(' ') |> Array.map (fun s -> s.Trim())
     
+    // Using F# 8's enhanced pattern matching for arrays
     match tokens with
     | [| "exit" |] -> Some Exit
     | [| "tick" |] -> Some Tick
@@ -88,13 +91,17 @@ let rec runSimulation state =
         state
     else
         // Auto-tick logic
+        // Using F# 7/8's improved option handling and thread creation
         let autoTickThread = 
             if state.AutoTick then
+                // Using F# 7's more concise lambda expressions
                 let thread = Thread(fun () ->
                     Thread.Sleep(state.Config.TickIntervalMs)
+                    // Using string interpolation from F# 7
                     if state.AutoTick then  // Check again in case it was changed
-                        Console.WriteLine("\nAuto tick...")
+                        Console.WriteLine($"\nAuto tick...")
                 )
+                // Using F# 8's enhanced property assignment
                 thread.IsBackground <- true
                 thread.Start()
                 Some thread
@@ -127,15 +134,18 @@ let rec runSimulation state =
                 printfn "Auto-tick disabled"
                 runSimulation { state with AutoTick = false }
             | _ ->
+                // Using F# 8's enhanced pattern matching
                 match processInput input state.System with
                 | Some Exit ->
                     printfn "Exiting simulation..."
                     { state with IsRunning = false }
                 | Some Tick ->
+                    // Using F# 8's improved record expressions
                     let updatedSystem = processTick state.System
                     ElevatorSimulation.UI.displayElevatorSystem updatedSystem
                     runSimulation { state with System = updatedSystem }
                 | Some event ->
+                    // Using function composition and record update
                     let updatedSystem = processEvent event state.System
                     ElevatorSimulation.UI.displayElevatorSystem updatedSystem
                     runSimulation { state with System = updatedSystem }

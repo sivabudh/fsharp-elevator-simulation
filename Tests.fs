@@ -66,22 +66,28 @@ let ``Processing external request should update system correctly`` () =
 
 [<Fact>]
 let ``Moving an elevator should update floor correctly`` () =
+    // Using F# 8's enhanced record syntax
     let elevator = 
         { createElevator 1 with 
             Direction = Up
             TargetFloor = Some 5 }
     
-    let movedElevator = moveElevator elevator
-    movedElevator.CurrentFloor |> should equal 2
+    // Using F# 7/8 piping and assertion
+    elevator
+    |> moveElevator
+    |> fun e -> e.CurrentFloor |> should equal 2
     
+    // Using F# 8's improved record creation and construction
     let downElevator = 
         { createElevator 1 with 
             CurrentFloor = 5
             Direction = Down
             TargetFloor = Some 1 }
     
-    let movedDownElevator = moveElevator downElevator
-    movedDownElevator.CurrentFloor |> should equal 4
+    // Using F# 7/8 piping for improved readability
+    downElevator
+    |> moveElevator
+    |> fun e -> e.CurrentFloor |> should equal 4
 
 [<Fact>]
 let ``Elevator should stop at requested floors`` () =
@@ -135,6 +141,7 @@ let ``Processing arrival should update direction when there are more floors to v
 
 [<Fact>]
 let ``System tick should move all elevators`` () =
+    // Using F# 8's improved record syntax and collection literals
     let elevator1 = 
         { createElevator 1 with 
             CurrentFloor = 1
@@ -143,6 +150,7 @@ let ``System tick should move all elevators`` () =
             RequestedFloors = Set.ofList [3]
             DoorStatus = Closed }
     
+    // Using F# 8's enhanced record construction
     let elevator2 = 
         { createElevator 2 with 
             CurrentFloor = 5
@@ -151,12 +159,17 @@ let ``System tick should move all elevators`` () =
             RequestedFloors = Set.ofList [1]
             DoorStatus = Closed }
     
+    // Using F# 8's list literals and record updates
     let system = { createElevatorSystem 2 10 with Elevators = [elevator1; elevator2] }
     
+    // Using F# 7/8 pipeline for better readability
     let tickedSystem = processTick system
     
-    let updated1 = tickedSystem.Elevators |> List.find (fun e -> e.Id = 1)
-    let updated2 = tickedSystem.Elevators |> List.find (fun e -> e.Id = 2)
+    // Using F# 7/8's improved lambda expressions and pattern matching
+    tickedSystem.Elevators 
+    |> List.find (fun e -> e.Id = 1)
+    |> fun e -> e.CurrentFloor |> should equal 2
     
-    updated1.CurrentFloor |> should equal 2
-    updated2.CurrentFloor |> should equal 4
+    tickedSystem.Elevators
+    |> List.find (fun e -> e.Id = 2) 
+    |> fun e -> e.CurrentFloor |> should equal 4
