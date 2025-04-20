@@ -4,6 +4,7 @@ open ElevatorSimulation.Types
 open ElevatorSimulation.Logic
 open ElevatorSimulation.Config
 open ElevatorSimulation.UI
+open Validation
 open System
 open System.Threading
 
@@ -89,21 +90,20 @@ type ParseError =
         | InvalidCommand -> 
             "Invalid command. Try: call <floor> <up|down>, request <elevator> <floor>, tick, auto, stop, exit"
 
-/// <summary>
-/// Structure for a floor call request
-/// </summary>
-type FloorCallRequest = {
-    Floor: int
-    Direction: Direction
-}
-
-/// <summary>
-/// Structure for an elevator floor request
-/// </summary>
-type ElevatorRequest = {
-    ElevatorId: int
-    TargetFloor: int
-}
+// These types are now defined in ElevatorTypes.fs
+// Using the common types from there to avoid duplication
+//
+// Previously defined here:
+//
+// type FloorCallRequest = {
+//     Floor: int
+//     Direction: Direction
+// }
+//
+// type ElevatorRequest = {
+//     ElevatorId: int
+//     TargetFloor: int
+// }
 
 /// <summary>
 /// Parses a floor call request from string inputs using pure functional error handling
@@ -202,6 +202,17 @@ let validateElevatorRequest elevatorId floorNum (system: ElevatorSystem) =
     | Error err -> Error err
 
 /// <summary>
+/// Temporarily commented out to remove Command type dependency
+/// This function will be re-implemented when we add back the validation system
+/// </summary>
+(*
+let applyCommand config command state =
+    // This is a placeholder version that just returns Ok for testing
+    // Will be fully implemented in future updates
+    Ok state
+*)
+
+/// <summary>
 /// Processes user input and returns the corresponding event
 /// </summary>
 /// <param name="input">The command string entered by the user</param>
@@ -233,7 +244,7 @@ let processInput (input: string) (system: ElevatorSystem) =
         // Parse and validate floor call command
         match parseFloorCall floorStr directionStr system with
         | Ok request -> 
-            // Valid request - convert to elevator event
+            // Valid request - convert to elevator event (ElevatorEvent, not Command)
             Ok (CallElevator (request.Floor, request.Direction))
         | Error error -> 
             // Report the specific error and return
@@ -253,7 +264,7 @@ let processInput (input: string) (system: ElevatorSystem) =
         // Parse and validate elevator request command
         match parseElevatorRequest elevatorStr floorStr system with
         | Ok request -> 
-            // Valid request - convert to elevator event
+            // Valid request - convert to elevator event (ElevatorEvent, not Command)
             Ok (RequestFloor (request.ElevatorId, request.TargetFloor))
         | Error error -> 
             // Report the specific error and return

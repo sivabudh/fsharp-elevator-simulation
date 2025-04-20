@@ -69,3 +69,25 @@ type ElevatorEvent =
     | Tick  // Simulation time tick
     | Exit  // Exit the simulation
     | Print // Display current system state
+
+/// Floor call request data
+type FloorCallRequest = {
+    Floor: int
+    Direction: Direction
+}
+
+/// Elevator request data 
+type ElevatorRequest = {
+    ElevatorId: int
+    TargetFloor: int
+}
+
+/// Command types for the validation system - temporarily commented out
+(*
+type Command =
+    | Call of FloorCallRequest
+    | Request of int * int  // ElevatorId, TargetFloor
+    | Tick
+    | Print
+    | Exit
+*)

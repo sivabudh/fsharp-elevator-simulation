@@ -33,28 +33,28 @@ let calculateDirection currentFloor targetFloor =
     | _ -> Idle
 
 /// Determines if an elevator is available to service a request
-let isElevatorAvailable elevator =
+let isElevatorAvailable (elevator: ElevatorState) : bool =
     elevator.Direction = Idle || elevator.DoorStatus = Open
 
 /// Finds the closest available elevator to a floor
-let findClosestElevator floor elevators =
+let findClosestElevator (floor: int) (elevators: ElevatorState list) : ElevatorState option =
     let availableElevators = elevators |> List.filter isElevatorAvailable
     
     match availableElevators with
     | [] -> None  // No available elevators
     | _ -> 
         // Find closest elevator by distance to floor
-        let sortedElevators = availableElevators |> List.sortBy (fun e -> abs (e.CurrentFloor - floor))
+        let sortedElevators = availableElevators |> List.sortBy (fun (e: ElevatorState) -> abs (e.CurrentFloor - floor))
         match tryHead sortedElevators with
         | Ok elevator -> Some elevator
         | Error _ -> None  // This shouldn't happen since we checked for empty list
 
 /// Finds the best elevator to handle a request
-let findBestElevator floor direction elevators =
+let findBestElevator (floor: int) (direction: Direction) (elevators: ElevatorState list) : ElevatorState option =
     // First try to find an elevator already going in the right direction
     let elevatorsInDirection =
         elevators
-        |> List.filter (fun e -> 
+        |> List.filter (fun (e: ElevatorState) -> 
             match direction, e.Direction with
             | Up, Up when e.CurrentFloor <= floor -> true
             | Down, Down when e.CurrentFloor >= floor -> true
@@ -71,7 +71,7 @@ let findBestElevator floor direction elevators =
         | Error _ -> findClosestElevator floor elevators
 
 /// Adds a floor to the elevator's requested floors
-let addRequestedFloor floor elevator =
+let addRequestedFloor (floor: int) (elevator: ElevatorState) : ElevatorState =
     { elevator with 
         RequestedFloors = Set.add floor elevator.RequestedFloors
         TargetFloor = 
@@ -127,7 +127,7 @@ let processExternalRequest floor direction system =
                 ExternalRequests = (floor, direction) :: system.ExternalRequests }
 
 /// Moves an elevator one floor in its current direction
-let moveElevator elevator =
+let moveElevator (elevator: ElevatorState) : ElevatorState =
     match elevator.Direction, elevator.TargetFloor with
     | Idle, _ -> elevator
     | _, None -> { elevator with Direction = Idle }
@@ -148,7 +148,7 @@ let moveElevator elevator =
 /// the doors begin to open (see processArrival), not when they close. This aligns with
 /// real elevator behavior where passengers begin boarding once doors start opening.
 /// </remarks>
-let shouldStopAtFloor elevator =
+let shouldStopAtFloor (elevator: ElevatorState) : bool =
     // Stop if current floor is directly requested
     let isFloorRequested = Set.contains elevator.CurrentFloor elevator.RequestedFloors
     
@@ -349,7 +349,7 @@ let private calculateIdleElevatorTarget currentFloor requestedFloors =
 /// - calculateMovingElevatorTarget: Handles logic for moving elevators
 /// - calculateIdleElevatorTarget: Specialized logic for idle elevators
 /// </remarks>
-let findNextStop currentFloor currentDirection requestedFloors =
+let findNextStop (currentFloor: int) (currentDirection: Direction) (requestedFloors: Set<int>) : (int option * Direction) =
     // Handle empty request set - elevator becomes idle with no target
     if Set.isEmpty requestedFloors then
         (None, Idle)
@@ -384,7 +384,7 @@ let findNextStop currentFloor currentDirection requestedFloors =
 /// - The next destination is calculated based on remaining requests
 /// - The elevator won't move again until doors are closed (enforced by movement checks)
 /// </remarks>
-let processArrival elevator =
+let processArrival (elevator: ElevatorState) : ElevatorState =
     if shouldStopAtFloor elevator then
         // Step 1: Remove this floor from requested floors
         // This marks the request as "serviced" immediately when doors begin to open
@@ -447,7 +447,7 @@ type DoorOperationError =
 /// evaluate complex conditions while maintaining readability. The result is either
 /// Ok unit (transition allowed) or Error with a specific error reason.
 /// </remarks>
-let validateDoorTransition elevator newDoorStatus =
+let validateDoorTransition (elevator: ElevatorState) (newDoorStatus: DoorStatus) : Result<unit, DoorOperationError> =
     match elevator.DoorStatus, newDoorStatus with
     | Open, Open -> 
         // No need to open an already open door
@@ -493,7 +493,7 @@ let validateDoorTransition elevator newDoorStatus =
 /// is stopped at a floor, providing safety for passengers. The door will
 /// stay open for the specified number of ticks before automatically closing.
 /// </remarks>
-let tryOpenDoor elevator doorOpenTime =
+let tryOpenDoor (elevator: ElevatorState) (doorOpenTime: int) : Result<ElevatorState, DoorOperationError> =
     match validateDoorTransition elevator Open with
     | Ok () ->
         // Valid transition - update door status and set timer
@@ -514,7 +514,7 @@ let tryOpenDoor elevator doorOpenTime =
 /// This function provides backward compatibility with existing code.
 /// It calls tryOpenDoor and handles the Result internally.
 /// </remarks>
-let openDoor elevator doorOpenTime =
+let openDoor (elevator: ElevatorState) (doorOpenTime: int) : ElevatorState =
     match tryOpenDoor elevator doorOpenTime with
     | Ok updatedElevator -> updatedElevator
     | Error error -> 
@@ -539,7 +539,7 @@ let openDoor elevator doorOpenTime =
 /// Door closure is a prerequisite for elevator movement - an elevator
 /// will remain stationary until its doors are closed.
 /// </remarks>
-let tryCloseDoor elevator =
+let tryCloseDoor (elevator: ElevatorState) : Result<ElevatorState, DoorOperationError> =
     match validateDoorTransition elevator Closed with
     | Ok () ->
         // Valid transition - update door status and clear timer
@@ -559,7 +559,7 @@ let tryCloseDoor elevator =
 /// This function provides backward compatibility with existing code.
 /// It calls tryCloseDoor and handles the Result internally.
 /// </remarks>
-let closeDoor elevator =
+let closeDoor (elevator: ElevatorState) : ElevatorState =
     match tryCloseDoor elevator with
     | Ok updatedElevator -> updatedElevator
     | Error error -> 
@@ -625,7 +625,7 @@ let reconsiderExternalRequests system =
 ///   this timer ensures passengers have time to physically enter/exit
 /// - By default, doors remain open for 3 ticks (configurable) before closing
 /// </remarks>
-let handleDoorTimer elevator =
+let handleDoorTimer (elevator: ElevatorState) : ElevatorState =
     match elevator with
     | { DoorStatus = Open; DoorOpenTimeRemaining = Some time } when time > 1 -> 
         // Door is open and timer is still running, decrement timer

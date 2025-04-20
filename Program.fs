@@ -5,6 +5,7 @@ open ElevatorSimulation.Logic
 open ElevatorSimulation.System
 open ElevatorSimulation.UI
 open ElevatorSimulation.Config
+open Validation
 open System
 
 let tryParseInt (str: string) =
@@ -13,22 +14,28 @@ let tryParseInt (str: string) =
     | true -> Some result
     | _ -> None
 
+// Legacy command parsing for backward compatibility
 let parseCommand (input: string) =
     let tokens = input.Trim().Split(' ')
     match tokens with
     | [| "call"; floorStr; dirStr |] ->
         match tryParseInt floorStr, dirStr.ToLower() with
-        | Some floor, "up" -> Ok (CallElevator (floor, Up))
+        // Return ElevatorEvent type (not Command)
+        | Some floor, "up" -> Ok (CallElevator (floor, Up)) 
         | Some floor, "down" -> Ok (CallElevator (floor, Down))
         | _, _ -> Error "Invalid 'call' format. Use: call <floor> <up|down>"
     | [| "request"; elevStr; floorStr |] ->
         match tryParseInt elevStr, tryParseInt floorStr with
+        // Return ElevatorEvent type (not Command)
         | Some elevatorId, Some floor -> Ok (RequestFloor (elevatorId, floor))
         | _ -> Error "Invalid 'request' format. Use: request <elevatorId> <floor>"
-    | [| "tick" |] -> Ok Tick
-    | [| "print" |] -> Ok Print
-    | [| "exit" |] -> Ok Exit
+    | [| "tick" |] -> Ok Tick  // These are already ElevatorEvent type
+    | [| "print" |] -> Ok Print  // These are already ElevatorEvent type
+    | [| "exit" |] -> Ok Exit  // These are already ElevatorEvent type
     | _ -> Error "Unknown command. Try 'call', 'request', 'tick', 'print', or 'exit'"
+    
+// Using the conversion functions from Validation module instead
+// These were previously defined here but moved to Validation module
 
 /// Demonstrates the elevator simulation with a pre-programmed scenario
 let runDemoScenario () =
@@ -172,6 +179,11 @@ let main argv =
         printfn "  exit         - Exit the simulation"
         printfn "\nTip: Run with '--demo' flag to see an automated demonstration"
         
+        // The new command handling loop is not yet implemented
+        // This will be part of our validation module integration
+        // For now we'll continue using the existing runSimulation function
+                
+        // Run the simulation with the existing implementation
         let finalState = runSimulation initialState
         
         0 // return an integer exit code
